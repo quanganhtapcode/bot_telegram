@@ -446,21 +446,24 @@ class Keyboards:
         return InlineKeyboardMarkup(keyboard)
 
     @staticmethod
-    def bank_account_menu(has_account: bool = False) -> InlineKeyboardMarkup:
+    def bank_account_menu() -> InlineKeyboardMarkup:
         """Bank account management menu."""
-        if has_account:
+        def _menu_with_account():
             return InlineKeyboardMarkup([
-                [InlineKeyboardButton("📱 Xem QR", callback_data="view_qr_no_amount")],
-                [InlineKeyboardButton("💰 Tạo QR có số tiền", callback_data="create_qr_with_amount")],
+                [InlineKeyboardButton("📋 Xem STK", callback_data="list_bank_accounts")],
                 [InlineKeyboardButton("🏛️ Đổi STK mặc định", callback_data="set_default_bank")],
                 [InlineKeyboardButton("🗑️ Xóa STK", callback_data="delete_bank_account")],
                 [InlineKeyboardButton("🔙 Quay lại", callback_data="settings_menu")]
             ])
-        else:
+        def _menu_no_account():
             return InlineKeyboardMarkup([
                 [InlineKeyboardButton("➕ Thêm STK", callback_data="add_bank_account")],
                 [InlineKeyboardButton("🔙 Quay lại", callback_data="settings_menu")]
             ])
+        # Accept argument
+        def menu(has_account: bool):
+            return _menu_with_account() if has_account else _menu_no_account()
+        return menu
 
     @staticmethod
     def payment_settings_menu() -> InlineKeyboardMarkup:
@@ -594,5 +597,13 @@ class Keyboards:
             [InlineKeyboardButton("💲 Cập nhật USD/VND", callback_data="set_usd_vnd_rate")],
             [InlineKeyboardButton("⚙️ Tỷ giá khác", callback_data="set_custom_rate")],
             [InlineKeyboardButton("🔙 Quay lại", callback_data="main_menu")]
+        ]
+        return InlineKeyboardMarkup(keyboard)
+
+    @staticmethod
+    def back_to_main_menu() -> InlineKeyboardMarkup:
+        """Back to main menu button."""
+        keyboard = [
+            [InlineKeyboardButton("🔙 Quay lại menu chính", callback_data="main_menu")]
         ]
         return InlineKeyboardMarkup(keyboard)

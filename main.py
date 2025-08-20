@@ -42,6 +42,13 @@ DEFAULT_BASE_CURRENCY = os.getenv('DEFAULT_BASE_CURRENCY', 'TWD')
 TIMEZONE = pytz.timezone(os.getenv('TIMEZONE', 'Asia/Ho_Chi_Minh'))
 ADMIN_USER_ID = int(os.getenv('ADMIN_USER_ID', '5245151002'))
 
+# Webhook configuration (optional)
+USE_WEBHOOK = os.getenv('USE_WEBHOOK', 'false').lower() == 'true'
+WEBHOOK_DOMAIN = os.getenv('WEBHOOK_DOMAIN')  # e.g. bot.quanganh.org
+WEBHOOK_PATH = os.getenv('WEBHOOK_PATH', '/telegram/webhook')
+WEBHOOK_PORT = int(os.getenv('WEBHOOK_PORT', '8080'))
+WEBHOOK_SECRET = os.getenv('WEBHOOK_SECRET')
+
 # Global instances
 db = Database(DATABASE_PATH)
 currency_service = CurrencyService(db)
@@ -1796,27 +1803,95 @@ class BotHandlers:
                         reply_markup=Keyboards.back_to_expense_menu()
                     )
                 else:
-                    # Show list of undoable expenses
+                    # Pagination: show 20 per page, start at page 1
+                    page = 1
+                    page_size = 20
+                    start = (page - 1) * page_size
+                    end = start + page_size
+                    page_items = undoable_expenses[start:end]
+
+                    total = len(undoable_expenses)
+                    total_pages = (total + page_size - 1) // page_size
+
                     undo_text = "🗑️ **Xóa chi tiêu**\n\n"
+                    undo_text += f"Trang {page}/{total_pages} — Tổng: {total}\n\n"
                     undo_text += "Chọn chi tiêu muốn xóa:\n\n"
-                    
+
                     keyboard = []
-                    for expense in undoable_expenses[:5]:  # Show max 5 recent expenses
+                    for expense in page_items:
                         formatted_amount = currency_service.format_amount(expense.amount, expense.currency)
                         description = expense.note if expense.note else "Chi tiêu cá nhân"
                         if len(description) > 20:
                             description = description[:17] + "..."
-                        
                         button_text = f"{formatted_amount} - {description}"
                         keyboard.append([InlineKeyboardButton(button_text, callback_data=f"undo_expense_{expense.id}")])
-                    
+
+                    nav_row = []
+                    if total_pages > 1:
+                        if page < total_pages:
+                            nav_row.append(InlineKeyboardButton("➡️ Trang sau", callback_data=f"undo_expense_page_{page+1}"))
+                    if nav_row:
+                        keyboard.append(nav_row)
                     keyboard.append([InlineKeyboardButton("🔙 Quay lại", callback_data="personal_expense_menu")])
-                    
+
                     await query.edit_message_text(
                         undo_text,
                         parse_mode='Markdown',
                         reply_markup=InlineKeyboardMarkup(keyboard)
                     )
+
+            elif data.startswith("undo_expense_page_"):
+                # Pagination handler for personal expense undo list
+                try:
+                    page = int(data.replace("undo_expense_page_", ""))
+                except ValueError:
+                    page = 1
+
+                db_user = await db.get_user_by_tg_id(user_id)
+                expenses = await db.get_personal_expenses(db_user.id, 30)
+                if not expenses:
+                    await query.edit_message_text(
+                        "🗑️ **Xóa chi tiêu**\n\n"
+                        "❌ Không có chi tiêu nào để xóa.",
+                        parse_mode='Markdown',
+                        reply_markup=Keyboards.back_to_expense_menu()
+                    )
+                    return
+
+                page_size = 20
+                total = len(expenses)
+                total_pages = (total + page_size - 1) // page_size
+                page = max(1, min(page, total_pages))
+                start = (page - 1) * page_size
+                end = start + page_size
+                page_items = expenses[start:end]
+
+                undo_text = "🗑️ **Xóa chi tiêu**\n\n"
+                undo_text += f"Trang {page}/{total_pages} — Tổng: {total}\n\n"
+                undo_text += "Chọn chi tiêu muốn xóa:\n\n"
+
+                keyboard = []
+                for expense in page_items:
+                    formatted_amount = currency_service.format_amount(expense.amount, expense.currency)
+                    description = expense.note if expense.note else "Chi tiêu cá nhân"
+                    if len(description) > 20:
+                        description = description[:17] + "..."
+                    keyboard.append([InlineKeyboardButton(f"{formatted_amount} - {description}", callback_data=f"undo_expense_{expense.id}")])
+
+                nav_row = []
+                if page > 1:
+                    nav_row.append(InlineKeyboardButton("⬅️ Trang trước", callback_data=f"undo_expense_page_{page-1}"))
+                if page < total_pages:
+                    nav_row.append(InlineKeyboardButton("➡️ Trang sau", callback_data=f"undo_expense_page_{page+1}"))
+                if nav_row:
+                    keyboard.append(nav_row)
+                keyboard.append([InlineKeyboardButton("🔙 Quay lại", callback_data="personal_expense_menu")])
+
+                await query.edit_message_text(
+                    undo_text,
+                    parse_mode='Markdown',
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
 
             # VietQR and Banking Handlers
             elif data == "bank_account_menu":
@@ -2603,6 +2678,217 @@ class BotHandlers:
                         "❌ **Không thể xóa chi tiêu**",
                         parse_mode='Markdown',
                         reply_markup=Keyboards.back_to_expense_menu()
+                    )
+
+            elif data == "undo_group_expense_menu":
+                logger.info("Processing undo group expense menu callback")
+                
+                # Get user's most recent group expenses that can be undone (from all group chats)
+                db_user = await db.get_user_by_tg_id(user_id)
+                
+                # Get all user's group expenses from all trips (last 30 days)
+                all_group_expenses = []
+                
+                # Get user's trips
+                user_trips = await db.get_user_trips(db_user.id)
+                
+                if not user_trips:
+                    await query.edit_message_text(
+                        "🗑️ **Hoàn tác giao dịch**\n\n"
+                        "❌ Bạn chưa tham gia group chat nào.",
+                        parse_mode='Markdown',
+                        reply_markup=Keyboards.back_to_main_menu()
+                    )
+                    return
+                
+                # Collect all group expenses from all group chats
+                for trip in user_trips:
+                    trip_expenses = await db.get_group_expenses_by_user(db_user.id, trip.id, 30)
+                    for expense in trip_expenses:
+                        all_group_expenses.append(expense)
+                
+                # Sort by creation time (newest first)
+                all_group_expenses.sort(key=lambda x: x.created_at, reverse=True)
+                
+                if not all_group_expenses:
+                    await query.edit_message_text(
+                        "🗑️ **Hoàn tác giao dịch**\n\n"
+                        "❌ Không có giao dịch nào để hoàn tác.",
+                        parse_mode='Markdown',
+                        reply_markup=Keyboards.back_to_main_menu()
+                    )
+                    return
+                
+                                    # Show list of undoable group expenses
+                    undo_text = "🗑️ **Hoàn tác giao dịch**\n\n"
+                    undo_text += "Chọn giao dịch muốn hoàn tác:\n\n"
+                    
+                    keyboard = []
+                    for expense in all_group_expenses[:8]:  # Show max 8 recent expenses
+                        formatted_amount = currency_service.format_amount(expense.amount, expense.currency)
+                        description = expense.description if expense.description else "Giao dịch"
+                        if len(description) > 15:
+                            description = description[:12] + "..."
+                    
+                    # Check if expense can still be undone
+                    can_undo = True
+                    if hasattr(expense, 'undo_until') and expense.undo_until:
+                        try:
+                            undo_until = expense.undo_until
+                            if isinstance(undo_until, str):
+                                undo_until = datetime.fromisoformat(undo_until)
+                            can_undo = undo_until > datetime.now()
+                        except:
+                            can_undo = True
+                    
+                    button_text = f"{formatted_amount} - {description}"
+                    if not can_undo:
+                        button_text += " ⏰"
+                    
+                    keyboard.append([InlineKeyboardButton(
+                        button_text, 
+                        callback_data=f"undo_group_expense_{expense.id}"
+                    )])
+                
+                keyboard.append([InlineKeyboardButton("🔙 Quay lại", callback_data="main_menu")])
+                
+                await query.edit_message_text(
+                    undo_text,
+                    parse_mode='Markdown',
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
+
+            elif data.startswith("undo_group_expense_"):
+                # Handle deleting specific group expense
+                expense_id = int(data.replace("undo_group_expense_", ""))
+                logger.info(f"Processing delete group expense: {expense_id}")
+                
+                # Get user from database
+                db_user = await db.get_user_by_tg_id(user_id)
+                if not db_user:
+                    await query.edit_message_text("❌ Lỗi: Không tìm thấy thông tin user!")
+                    return
+                
+                # Check if expense can be undone
+                try:
+                    # Get expense details
+                    expense = await db.get_group_expense_by_id(expense_id)
+                    if not expense:
+                        await query.edit_message_text(
+                            "❌ **Không tìm thấy chi tiêu**",
+                            parse_mode='Markdown',
+                            reply_markup=Keyboards.back_to_main_menu()
+                        )
+                        return
+                    
+                    # Check if user is the payer
+                    if expense.payer_id != db_user.id:
+                        await query.edit_message_text(
+                            "❌ **Bạn không thể hoàn tác chi tiêu này**\n\n"
+                            "Chỉ người chi tiêu mới có thể hoàn tác.",
+                            parse_mode='Markdown',
+                            reply_markup=Keyboards.back_to_main_menu()
+                        )
+                        return
+                    
+                    # Check time limit
+                    can_undo = True
+                    if hasattr(expense, 'undo_until') and expense.undo_until:
+                        try:
+                            undo_until = expense.undo_until
+                            if isinstance(undo_until, str):
+                                undo_until = datetime.fromisoformat(undo_until)
+                            can_undo = undo_until > datetime.now()
+                        except:
+                            can_undo = True
+                    
+                    if not can_undo:
+                        await query.edit_message_text(
+                            "⏰ **Không thể hoàn tác chi tiêu này**\n\n"
+                            "Đã quá thời gian cho phép hoàn tác.",
+                            parse_mode='Markdown',
+                            reply_markup=Keyboards.back_to_main_menu()
+                        )
+                        return
+                    
+                    # Show confirmation dialog
+                    formatted_amount = currency_service.format_amount(expense.amount, expense.currency)
+                    description = expense.description if expense.description else "Giao dịch"
+                    
+                    confirm_text = f"🗑️ **Xác nhận hoàn tác giao dịch**\n\n"
+                    confirm_text += f"💰 **Số tiền**: {formatted_amount}\n"
+                    confirm_text += f"📝 **Mô tả**: {description}\n"
+                    confirm_text += f"⏰ **Thời gian**: {expense.created_at[:19] if expense.created_at else 'N/A'}\n\n"
+                    confirm_text += "⚠️ **Cảnh báo**:\n"
+                    confirm_text += "• Hành động này KHÔNG THỂ hoàn tác\n"
+                    confirm_text += "• Sẽ ảnh hưởng đến tính toán nợ của nhóm\n"
+                    confirm_text += "• Tất cả dữ liệu liên quan sẽ bị xóa vĩnh viễn\n\n"
+                    confirm_text += "Bạn có chắc chắn muốn hoàn tác?"
+                    
+                    keyboard = [
+                        [
+                            InlineKeyboardButton("✅ Xác nhận hoàn tác", callback_data=f"confirm_undo_group_{expense_id}"),
+                            InlineKeyboardButton("❌ Hủy bỏ", callback_data="undo_group_expense_menu")
+                        ]
+                    ]
+                    
+                    await query.edit_message_text(
+                        confirm_text,
+                        parse_mode='Markdown',
+                        reply_markup=InlineKeyboardMarkup(keyboard)
+                    )
+                
+                except Exception as e:
+                    logger.error(f"Error undoing group expense: {e}")
+                    await query.edit_message_text(
+                        "❌ **Có lỗi xảy ra**\n\n"
+                        "Vui lòng thử lại sau.",
+                        parse_mode='Markdown',
+                        reply_markup=Keyboards.back_to_main_menu()
+                    )
+
+            elif data.startswith("confirm_undo_group_"):
+                # Handle confirming group expense undo
+                expense_id = int(data.replace("confirm_undo_group_", ""))
+                logger.info(f"Confirming undo group expense: {expense_id}")
+                
+                # Get user from database
+                db_user = await db.get_user_by_tg_id(user_id)
+                if not db_user:
+                    await query.edit_message_text("❌ Lỗi: Không tìm thấy thông tin user!")
+                    return
+                
+                try:
+                    # Hard delete the expense
+                    success = await db.delete_group_expense(expense_id, db_user.id)
+                    if success:
+                        await query.edit_message_text(
+                            "✅ **Đã hoàn tác giao dịch thành công!**\n\n"
+                            "⚠️ **Lưu ý**: Việc hoàn tác có thể ảnh hưởng đến tính toán nợ của group.",
+                            parse_mode='Markdown',
+                            reply_markup=InlineKeyboardMarkup([[
+                                InlineKeyboardButton("🔙 Quay lại", callback_data="main_menu")
+                            ]])
+                        )
+                    else:
+                        await query.edit_message_text(
+                            "❌ **Không thể hoàn tác giao dịch**\n\n"
+                            "Có lỗi xảy ra khi hoàn tác. Vui lòng thử lại.",
+                            parse_mode='Markdown',
+                            reply_markup=InlineKeyboardMarkup([[
+                                InlineKeyboardButton("🔙 Quay lại", callback_data="main_menu")
+                            ]])
+                        )
+                        
+                except Exception as e:
+                    logger.error(f"Error confirming undo group expense: {e}")
+                    await query.edit_message_text(
+                        "❌ **Có lỗi xảy ra**\n\n"
+                        "Vui lòng thử lại sau.",
+                        parse_mode='Markdown',
+                        reply_markup=InlineKeyboardMarkup([[
+                            InlineKeyboardButton("🔙 Quay lại", callback_data="main_menu")
+                        ]])
                     )
 
             elif data.startswith("decrease_"):
@@ -3910,9 +4196,28 @@ def main():
     application.post_init = post_init
     application.post_stop = post_stop
 
-    # Run the bot
+    # Run the bot (webhook or polling)
     logger.info("Starting bot...")
-    application.run_polling(allowed_updates=Update.ALL_TYPES)
+    logger.info(f"USE_WEBHOOK={USE_WEBHOOK}, WEBHOOK_DOMAIN={WEBHOOK_DOMAIN}, WEBHOOK_PATH={WEBHOOK_PATH}, WEBHOOK_PORT={WEBHOOK_PORT}")
+    if USE_WEBHOOK:
+        # Build full webhook URL
+        if not WEBHOOK_DOMAIN:
+            logger.error("USE_WEBHOOK=true nhưng thiếu WEBHOOK_DOMAIN")
+            return
+        webhook_url = f"https://{WEBHOOK_DOMAIN}{WEBHOOK_PATH}"
+        logger.info(f"Using webhook URL: {webhook_url}")
+
+        application.run_webhook(
+            listen="0.0.0.0",
+            port=WEBHOOK_PORT,
+            url_path=WEBHOOK_PATH.lstrip('/'),
+            webhook_url=webhook_url,
+            secret_token=WEBHOOK_SECRET,
+            allowed_updates=Update.ALL_TYPES,
+            drop_pending_updates=True,
+        )
+    else:
+        application.run_polling(allowed_updates=Update.ALL_TYPES)
 
 
 if __name__ == "__main__":

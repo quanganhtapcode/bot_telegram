@@ -1,0 +1,169 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Bot Admin - Quản lý Giao dịch</title>
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
+      .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+      .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px,1fr)); gap: 16px; margin-bottom: 24px; }
+      .stat-card { border: 1px solid #eee; border-radius: 8px; padding: 16px; background: #fafafa; }
+      .expenses-table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+      .expenses-table th, .expenses-table td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; }
+      .expenses-table th { background: #f8f9fa; font-weight: 600; }
+      .expenses-table tr:hover { background: #f8f9fa; }
+      .amount { font-family: monospace; font-weight: 600; }
+      .currency { color: #666; font-size: 0.9em; }
+      .delete-btn { background: #dc3545; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
+      .delete-btn:hover { background: #c82333; }
+      .muted { color: #666; }
+      .success { color: #28a745; background: #d4edda; padding: 8px 12px; border-radius: 4px; margin-bottom: 16px; }
+      .error { color: #721c24; background: #f8d7da; padding: 8px 12px; border-radius: 4px; margin-bottom: 16px; }
+      .nav-links { margin-bottom: 16px; }
+      .nav-links a { color: #0d6efd; text-decoration: none; margin-right: 16px; }
+      .nav-links a:hover { text-decoration: underline; }
+      .limit-controls { margin-bottom: 16px; }
+      .limit-controls form { display: inline-block; margin-right: 16px; }
+      .limit-controls input[type="number"] { width: 80px; padding: 4px 8px; border: 1px solid #ddd; border-radius: 4px; }
+      .limit-controls button { background: #007bff; color: white; border: none; padding: 4px 12px; border-radius: 4px; cursor: pointer; }
+      .limit-controls button:hover { background: #0056b3; }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <h1>Quản lý Giao dịch</h1>
+      <div>
+        <a href="/">← Dashboard</a>
+      </div>
+    </div>
+
+    <div class="nav-links">
+      <a href="/users">Users</a>
+      <a href="/expenses/stats">📊 Thống kê</a>
+      <a href="/logs">Logs</a>
+    </div>
+
+    <!-- Thông báo -->
+    {% if request.query_params.get("deleted") %}
+    <div class="success">✅ Giao dịch đã được xóa thành công!</div>
+    {% endif %}
+    
+    {% if request.query_params.get("error") %}
+    <div class="error">❌ Lỗi: {{ request.query_params.get("error") }}</div>
+    {% endif %}
+
+    <!-- Thống kê -->
+    <div class="stats">
+      <div class="stat-card">
+        <h3>Giao dịch (30 phút)</h3>
+        <div style="font-size: 24px; font-weight: 700; color: #dc3545;">{{ half_hour_count }}</div>
+        <div class="muted">Cực kỳ gần đây</div>
+      </div>
+      <div class="stat-card">
+        <h3>Giao dịch (1 giờ)</h3>
+        <div style="font-size: 24px; font-weight: 700; color: #ff6b35;">{{ hour_count }}</div>
+        <div class="muted">Rất gần đây</div>
+      </div>
+      <div class="stat-card">
+        <h3>Giao dịch (24h)</h3>
+        <div style="font-size: 24px; font-weight: 700; color: #28a745;">{{ recent_count }}</div>
+        <div class="muted">Có thể hoàn tác</div>
+      </div>
+      <div class="stat-card">
+        <h3>Giao dịch (7 ngày)</h3>
+        <div style="font-size: 24px; font-weight: 700;">{{ week_count }}</div>
+        <div class="muted">Tổng cộng</div>
+      </div>
+      <div class="stat-card">
+        <h3>Hiển thị</h3>
+        <div style="font-size: 24px; font-weight: 700;">{{ limit }}</div>
+        <div class="muted">Giao dịch</div>
+      </div>
+    </div>
+
+    <!-- Điều khiển giới hạn -->
+    <div class="limit-controls">
+      <form method="GET" action="/expenses">
+        <label>Hiển thị: </label>
+        <input type="number" name="limit" value="{{ limit }}" min="10" max="1000" step="10">
+        <button type="submit">Cập nhật</button>
+      </form>
+      <a href="/expenses?limit=50">50</a> |
+      <a href="/expenses?limit=100">100</a> |
+      <a href="/expenses?limit=200">200</a> |
+      <a href="/expenses?limit=500">500</a>
+    </div>
+
+    <!-- Bảng giao dịch -->
+    <table class="expenses-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Người chi</th>
+          <th>Chuyến đi</th>
+          <th>Số tiền</th>
+          <th>Ghi chú</th>
+          <th>Thời gian</th>
+          <th>Thao tác</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for expense in expenses %}
+        <tr>
+          <td><strong>#{{ expense[0] }}</strong></td>
+          <td>{{ expense[9] or "N/A" }}</td>
+          <td>{{ expense[10] or "N/A" }}</td>
+          <td>
+            <span class="amount">{{ "{:,.2f}".format(expense[3]) }}</span>
+            <span class="currency">{{ expense[4] }}</span>
+          </td>
+          <td>{{ expense[5] or "-" }}</td>
+          <td>
+            <div>{{ expense[6][:19] if expense[6] else "N/A" }}</div>
+            <div class="muted" style="font-size: 0.9em;">
+              {% if expense[6] %}
+                {% set created_time = expense[6] %}
+                {% if created_time.endswith('+00:00') %}
+                  {{ created_time[:-6] }}
+                {% else %}
+                  {{ created_time }}
+                {% endif %}
+              {% endif %}
+            </div>
+            {% if expense[1] %}
+            <div style="margin-top: 4px;">
+              <a href="/expenses/trip/{{ expense[1] }}" style="font-size: 0.8em; color: #007bff;">
+                👁️ Xem chuyến đi
+              </a>
+            </div>
+            {% endif %}
+          </td>
+          <td>
+            <form method="POST" action="/expenses/{{ expense[0] }}/delete" style="display: inline;" 
+                  onsubmit="return confirm('⚠️ CẢNH BÁO: Bạn có chắc chắn muốn xóa giao dịch này?\n\n- Hành động này KHÔNG THỂ hoàn tác\n- Tất cả dữ liệu liên quan sẽ bị xóa vĩnh viễn\n- Có thể ảnh hưởng đến tính toán nợ và chi tiêu\n\nBạn có muốn tiếp tục?')">
+              <button type="submit" class="delete-btn">🗑️ Xóa</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {% if not expenses %}
+    <div style="text-align: center; padding: 40px; color: #666;">
+      <p>Không có giao dịch nào.</p>
+    </div>
+    {% endif %}
+
+    <script>
+      // Tự động ẩn thông báo sau 5 giây
+      setTimeout(function() {
+        const notifications = document.querySelectorAll('.success, .error');
+        notifications.forEach(function(notification) {
+          notification.style.display = 'none';
+        });
+      }, 5000);
+    </script>
+  </body>
+</html>

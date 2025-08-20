@@ -1,0 +1,46 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Bot Admin - Users</title>
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
+      table { border-collapse: collapse; width: 100%; }
+      th, td { padding: 8px 12px; border-bottom: 1px solid #eee; text-align: left; }
+      th { background: #fafafa; position: sticky; top: 0; }
+      .muted { color: #666; }
+      a { color: #0d6efd; text-decoration: none; }
+      a:hover { text-decoration: underline; }
+    </style>
+  </head>
+  <body>
+    <h1>Users</h1>
+    <p class="muted"><a href="/">← Back</a></p>
+    <table>
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>TG User ID</th>
+          <th>Name</th>
+          <th>Created At</th>
+          <th>Last Seen</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for u in users %}
+        <tr>
+          <td>{{ u[0] }}</td>
+          <td>{{ u[1] }}</td>
+          <td>{{ u[2] }}</td>
+          <td>{{ u[3] }}</td>
+          <td>{{ u[4] }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </body>
+  </html>
+
+
+

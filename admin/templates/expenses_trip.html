@@ -1,0 +1,171 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Bot Admin - Giao dịch Chuyến đi</title>
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
+      .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+      .nav-links { margin-bottom: 16px; }
+      .nav-links a { color: #0d6efd; text-decoration: none; margin-right: 16px; }
+      .nav-links a:hover { text-decoration: underline; }
+      .trip-info { background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; padding: 20px; margin-bottom: 24px; }
+      .trip-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px,1fr)); gap: 16px; margin: 20px 0; }
+      .stat-card { border: 1px solid #dee2e6; border-radius: 8px; padding: 16px; background: white; text-align: center; }
+      .stat-number { font-size: 28px; font-weight: 700; color: #007bff; }
+      .stat-label { color: #6c757d; font-size: 0.9em; }
+      .members-list { background: #f8f9fa; border: 1px solid #e9ecef; border-radius: 8px; padding: 16px; margin-bottom: 24px; }
+      .member-item { display: inline-block; background: white; border: 1px solid #dee2e6; border-radius: 4px; padding: 8px 12px; margin: 4px; }
+      .member-role { font-size: 0.8em; color: #6c757d; }
+      .admin-role { color: #dc3545; font-weight: 600; }
+      .expenses-table { width: 100%; border-collapse: collapse; margin-top: 16px; }
+      .expenses-table th, .expenses-table td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; }
+      .expenses-table th { background: #f8f9fa; font-weight: 600; }
+      .expenses-table tr:hover { background: #f8f9fa; }
+      .amount { font-family: monospace; font-weight: 600; }
+      .currency { color: #666; font-size: 0.9em; }
+      .delete-btn { background: #dc3545; color: white; border: none; padding: 6px 12px; border-radius: 4px; cursor: pointer; }
+      .delete-btn:hover { background: #c82333; }
+      .muted { color: #666; }
+      .success { color: #28a745; background: #d4edda; padding: 8px 12px; border-radius: 4px; margin-bottom: 16px; }
+      .error { color: #721c24; background: #f8d7da; padding: 8px 12px; border-radius: 4px; margin-bottom: 16px; }
+      .warning { background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 8px; padding: 16px; margin-bottom: 24px; }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <h1>Giao dịch Chuyến đi</h1>
+      <div>
+        <a href="/expenses">← Quay lại</a>
+      </div>
+    </div>
+
+    <div class="nav-links">
+      <a href="/">Dashboard</a>
+      <a href="/expenses">Quản lý giao dịch</a>
+      <a href="/expenses/stats">📊 Thống kê</a>
+      <a href="/users">Users</a>
+      <a href="/logs">Logs</a>
+    </div>
+
+    <!-- Thông báo -->
+    {% if request.query_params.get("deleted") %}
+    <div class="success">✅ Giao dịch đã được xóa thành công!</div>
+    {% endif %}
+    
+    {% if request.query_params.get("error") %}
+    <div class="error">❌ Lỗi: {{ request.query_params.get("error") }}</div>
+    {% endif %}
+
+    <!-- Thông tin chuyến đi -->
+    <div class="trip-info">
+      <h2>{{ trip[2] }}</h2>
+      <p class="muted">
+        <strong>Mã:</strong> {{ trip[1] }} | 
+        <strong>Tiền tệ cơ bản:</strong> {{ trip[3] }} | 
+        <strong>Ngày tạo:</strong> {{ trip[5][:19] if trip[5] else "N/A" }}
+      </p>
+      
+      <div class="trip-stats">
+        <div class="stat-card">
+          <div class="stat-number">{{ total_expenses }}</div>
+          <div class="stat-label">Tổng giao dịch</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-number">{{ "{:,.0f}".format(total_amount) }}</div>
+          <div class="stat-label">Tổng tiền ({{ trip[3] }})</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Danh sách thành viên -->
+    <div class="members-list">
+      <h3>👥 Thành viên ({{ members|length }})</h3>
+      {% for member in members %}
+      <div class="member-item">
+        <strong>{{ member[0] }}</strong>
+        <span class="member-role {% if member[1] == 'admin' %}admin-role{% endif %}">
+          ({{ member[1] }})
+        </span>
+      </div>
+      {% endfor %}
+    </div>
+
+    <!-- Cảnh báo về hoàn tác -->
+    <div class="warning">
+      <h4>⚠️ Lưu ý khi hoàn tác giao dịch trong chuyến đi:</h4>
+      <ul>
+        <li>Hoàn tác giao dịch sẽ ảnh hưởng đến tính toán nợ của tất cả thành viên</li>
+        <li>Nếu giao dịch đã được chia sẻ, việc hoàn tác có thể làm mất cân bằng</li>
+        <li>Nên thông báo cho tất cả thành viên trước khi hoàn tác</li>
+        <li>Chỉ hoàn tác khi thực sự cần thiết và có sự đồng thuận</li>
+      </ul>
+    </div>
+
+    <!-- Bảng giao dịch -->
+    <h3>📋 Danh sách giao dịch</h3>
+    {% if expenses %}
+    <table class="expenses-table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Người chi</th>
+          <th>Số tiền</th>
+          <th>Ghi chú</th>
+          <th>Thời gian</th>
+          <th>Thao tác</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for expense in expenses %}
+        <tr>
+          <td><strong>#{{ expense[0] }}</strong></td>
+          <td>{{ expense[9] or "N/A" }}</td>
+          <td>
+            <span class="amount">{{ "{:,.2f}".format(expense[3]) }}</span>
+            <span class="currency">{{ expense[4] }}</span>
+            <br>
+            <small class="muted">≈ {{ "{:,.2f}".format(expense[8]) }} {{ trip[3] }}</small>
+          </td>
+          <td>{{ expense[5] or "-" }}</td>
+          <td>
+            <div>{{ expense[6][:19] if expense[6] else "N/A" }}</div>
+            <div class="muted" style="font-size: 0.9em;">
+              {% if expense[6] %}
+                {% set created_time = expense[6] %}
+                {% if created_time.endswith('+00:00') %}
+                  {{ created_time[:-6] }}
+                {% else %}
+                  {{ created_time }}
+                {% endif %}
+              {% endif %}
+            </div>
+          </td>
+          <td>
+            <form method="POST" action="/expenses/{{ expense[0] }}/delete" style="display: inline;" 
+                  onsubmit="return confirm('⚠️ CẢNH BÁO: Bạn có chắc chắn muốn xóa giao dịch này?\n\n- Hành động này KHÔNG THỂ hoàn tác\n- Sẽ ảnh hưởng đến tính toán nợ của chuyến đi\n- Tất cả dữ liệu liên quan sẽ bị xóa vĩnh viễn\n\nBạn có muốn tiếp tục?')">
+              <button type="submit" class="delete-btn">🗑️ Xóa</button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <div style="text-align: center; padding: 40px; color: #666;">
+      <p>Chưa có giao dịch nào trong chuyến đi này.</p>
+    </div>
+    {% endif %}
+
+    <script>
+      // Tự động ẩn thông báo sau 5 giây
+      setTimeout(function() {
+        const notifications = document.querySelectorAll('.success, .error');
+        notifications.forEach(function(notification) {
+          notification.style.display = 'none';
+        });
+      }, 5000);
+    </script>
+  </body>
+</html>

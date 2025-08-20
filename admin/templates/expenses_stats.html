@@ -1,0 +1,165 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Bot Admin - Thống kê Giao dịch</title>
+    <style>
+      body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; margin: 24px; }
+      .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+      .nav-links { margin-bottom: 16px; }
+      .nav-links a { color: #0d6efd; text-decoration: none; margin-right: 16px; }
+      .nav-links a:hover { text-decoration: underline; }
+      .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px,1fr)); gap: 12px; margin-bottom: 32px; }
+      .stat-item { border: 1px solid #eee; border-radius: 8px; padding: 16px; background: #fafafa; text-align: center; }
+      .stat-number { font-size: 24px; font-weight: 700; margin-bottom: 4px; }
+      .stat-label { color: #666; font-size: 0.9em; }
+      .section { margin-bottom: 32px; }
+      .section h2 { border-bottom: 2px solid #eee; padding-bottom: 8px; margin-bottom: 16px; }
+      .time-chart { display: grid; grid-template-columns: repeat(12, 1fr); gap: 4px; margin: 16px 0; }
+      .time-bar { background: #007bff; height: 100px; display: flex; align-items: end; justify-content: center; }
+      .time-bar span { color: white; font-size: 0.8em; writing-mode: vertical-rl; text-orientation: mixed; }
+      .day-chart { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; margin: 16px 0; }
+      .day-item { border: 1px solid #eee; border-radius: 4px; padding: 8px; text-align: center; background: #f8f9fa; }
+      .day-header { font-weight: 600; color: #666; }
+      .day-count { font-size: 18px; font-weight: 700; color: #007bff; }
+      .day-amount { font-size: 0.9em; color: #666; }
+      .highlight { background: #fff3cd; border-color: #ffeaa7; }
+      .warning { background: #f8d7da; border-color: #f5c6cb; }
+      .success { background: #d4edda; border-color: #c3e6cb; }
+    </style>
+  </head>
+  <body>
+    <div class="header">
+      <h1>Thống kê Giao dịch</h1>
+      <div>
+        <a href="/expenses">← Quay lại</a>
+      </div>
+    </div>
+
+    <div class="nav-links">
+      <a href="/">Dashboard</a>
+      <a href="/expenses">Quản lý giao dịch</a>
+      <a href="/users">Users</a>
+      <a href="/logs">Logs</a>
+    </div>
+
+    <!-- Thống kê theo thời gian -->
+    <div class="section">
+      <h2>📊 Thống kê theo thời gian</h2>
+      <p class="muted">Số lượng giao dịch trong các khoảng thời gian khác nhau</p>
+      
+      <div class="stats-grid">
+        {% for stat in stats %}
+        <div class="stat-item {% if stat.count > 0 and stat.time_range in ['5 minutes', '15 minutes', '30 minutes'] %}warning{% elif stat.count > 0 and stat.time_range in ['1 hour', '3 hours'] %}highlight{% elif stat.count > 0 %}success{% endif %}">
+          <div class="stat-number">{{ stat.count }}</div>
+          <div class="stat-label">{{ stat.label }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Biểu đồ theo giờ trong ngày -->
+    <div class="section">
+      <h2>🕐 Hoạt động theo giờ (7 ngày gần nhất)</h2>
+      <p class="muted">Số lượng giao dịch theo từng giờ trong ngày</p>
+      
+      <div class="time-chart">
+        {% for hour in range(24) %}
+        {% set hour_data = hourly_stats | selectattr("hour", "equalto", hour | string) | first %}
+        {% if hour_data %}
+        <div class="time-bar" style="height: {{ (hour_data.count / (hourly_stats | map(attribute="count") | max)) * 100 }}px;">
+          <span>{{ hour_data.count }}</span>
+        </div>
+        {% else %}
+        <div class="time-bar" style="height: 10px; background: #eee;">
+          <span>0</span>
+        </div>
+        {% endif %}
+        {% endfor %}
+      </div>
+      
+      <div style="text-align: center; margin-top: 8px; color: #666;">
+        <small>0h → 23h</small>
+      </div>
+      
+      <div style="margin-top: 16px;">
+        <h4>Chi tiết theo giờ:</h4>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 8px;">
+          {% for hour_data in hourly_stats %}
+          <div class="day-item">
+            <div class="day-header">{{ hour_data.hour }}:00</div>
+            <div class="day-count">{{ hour_data.count }}</div>
+            <div class="day-amount">{{ "{:,.0f}".format(hour_data.total_amount or 0) }}</div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+
+    <!-- Thống kê theo ngày trong tuần -->
+    <div class="section">
+      <h2>📅 Hoạt động theo ngày (30 ngày gần nhất)</h2>
+      <p class="muted">Số lượng giao dịch theo từng ngày trong tuần</p>
+      
+      <div class="day-chart">
+        <div class="day-item day-header">CN</div>
+        <div class="day-item day-header">T2</div>
+        <div class="day-item day-header">T3</div>
+        <div class="day-item day-header">T4</div>
+        <div class="day-item day-header">T5</div>
+        <div class="day-item day-header">T6</div>
+        <div class="day-item day-header">T7</div>
+        
+        {% for day in range(7) %}
+        {% set day_data = daily_stats | selectattr("day_of_week", "equalto", day | string) | list %}
+        {% set total_count = day_data | sum(attribute="count") %}
+        {% set total_amount = day_data | sum(attribute="total_amount") %}
+        <div class="day-item">
+          <div class="day-count">{{ total_count }}</div>
+          <div class="day-amount">{{ "{:,.0f}".format(total_amount or 0) }}</div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <!-- Thông tin về khả năng hoàn tác -->
+    <div class="section">
+      <h2>⚠️ Lưu ý về Hoàn tác Giao dịch</h2>
+      <div style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 8px; padding: 16px;">
+        <h4>Khuyến nghị:</h4>
+        <ul>
+          <li><strong>Giao dịch trong 30 phút:</strong> Có thể hoàn tác an toàn, ít ảnh hưởng</li>
+          <li><strong>Giao dịch trong 1-3 giờ:</strong> Cần cân nhắc kỹ trước khi hoàn tác</li>
+          <li><strong>Giao dịch trong 24 giờ:</strong> Chỉ hoàn tác khi thực sự cần thiết</li>
+          <li><strong>Giao dịch cũ hơn:</strong> Không nên hoàn tác vì có thể ảnh hưởng đến tính toán nợ</li>
+        </ul>
+        
+        <h4>Lưu ý:</h4>
+        <ul>
+          <li>Hoàn tác giao dịch sẽ xóa vĩnh viễn tất cả dữ liệu liên quan</li>
+          <li>Có thể ảnh hưởng đến tính toán nợ và chi tiêu của nhóm</li>
+          <li>Nên thông báo cho các thành viên liên quan trước khi hoàn tác</li>
+        </ul>
+      </div>
+    </div>
+
+    <script>
+      // Highlight các giao dịch gần đây
+      document.addEventListener('DOMContentLoaded', function() {
+        const warningItems = document.querySelectorAll('.warning');
+        warningItems.forEach(function(item) {
+          item.style.animation = 'pulse 2s infinite';
+        });
+      });
+    </script>
+    
+    <style>
+      @keyframes pulse {
+        0% { opacity: 1; }
+        50% { opacity: 0.7; }
+        100% { opacity: 1; }
+      }
+    </style>
+  </body>
+</html>
