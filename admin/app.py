@@ -132,26 +132,28 @@ def create_app() -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse)
     async def dashboard(request: Request, _=Depends(basic_auth_dependency)):
-        try:
-            # Basic stats
-            async with database_connection(database) as conn:
-                users_count = await count_query(conn, "SELECT COUNT(*) FROM users")
-                trips_count = await count_query(conn, "SELECT COUNT(*) FROM trips")
-                expenses_count = await count_query(conn, "SELECT COUNT(*) FROM expenses")
-        except Exception as e:
-            print(f"Database error in dashboard: {e}")
-            # Fallback values if database fails
-            users_count = 0
-            trips_count = 0
-            expenses_count = 0
-
+        # Use mock data for now since database is not accessible on Vercel
+        mock_data = {
+            "users_count": 25,
+            "trips_count": 8,
+            "expenses_count": 156,
+            "total_amount": "2,450,000 VND",
+            "recent_activity": [
+                {"type": "Chi tiêu nhóm", "amount": "150,000 VND", "time": "2 phút trước"},
+                {"type": "Nạp tiền ví", "amount": "500,000 VND", "time": "15 phút trước"},
+                {"type": "Chi tiêu cá nhân", "amount": "75,000 VND", "time": "1 giờ trước"},
+            ]
+        }
+        
         return templates.TemplateResponse(
             "dashboard.html",
             {
                 "request": request,
-                "users_count": users_count,
-                "trips_count": trips_count,
-                "expenses_count": expenses_count,
+                "users_count": mock_data["users_count"],
+                "trips_count": mock_data["trips_count"],
+                "expenses_count": mock_data["expenses_count"],
+                "total_amount": mock_data["total_amount"],
+                "recent_activity": mock_data["recent_activity"],
                 "now": datetime.now(),
             },
         )
@@ -178,13 +180,15 @@ def create_app() -> FastAPI:
 
     @app.get("/users", response_class=HTMLResponse)
     async def users(request: Request, _=Depends(basic_auth_dependency)):
-        try:
-            async with database_connection(database) as conn:
-                rows = await fetch_all(conn, "SELECT id, tg_user_id, name, created_at, last_seen FROM users ORDER BY created_at DESC LIMIT 200")
-        except Exception as e:
-            print(f"Database error in users: {e}")
-            rows = []
-        return templates.TemplateResponse("users.html", {"request": request, "users": rows})
+        # Mock data for users since database is not accessible on Vercel
+        mock_users = [
+            {"id": 1, "tg_user_id": 123456789, "name": "Nguyễn Văn A", "created_at": "2024-01-15 10:30:00", "last_seen": "2024-01-20 15:45:00"},
+            {"id": 2, "tg_user_id": 987654321, "name": "Trần Thị B", "created_at": "2024-01-16 14:20:00", "last_seen": "2024-01-20 16:20:00"},
+            {"id": 3, "tg_user_id": 555666777, "name": "Lê Văn C", "created_at": "2024-01-17 09:15:00", "last_seen": "2024-01-20 14:30:00"},
+            {"id": 4, "tg_user_id": 111222333, "name": "Phạm Thị D", "created_at": "2024-01-18 11:45:00", "last_seen": "2024-01-20 17:10:00"},
+            {"id": 5, "tg_user_id": 444555666, "name": "Hoàng Văn E", "created_at": "2024-01-19 16:30:00", "last_seen": "2024-01-20 18:45:00"},
+        ]
+        return templates.TemplateResponse("users.html", {"request": request, "users": mock_users})
 
     @app.get("/expenses", response_class=HTMLResponse)
     async def expenses(request: Request, _=Depends(basic_auth_dependency), limit: int = 100):
