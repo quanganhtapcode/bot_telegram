@@ -41,19 +41,16 @@ if errorlevel 1 goto :git_err
 
 REM Commit changes
 echo Committing changes...
-git commit -m "Auto-deploy: $(date /t) $(time /t)"
-if errorlevel 1 goto :git_err
+git commit -m "Auto-deploy: %date% %time%" || echo "No changes to commit"
 
 REM Push to GitHub
 echo Pushing to GitHub...
-git push -u origin main
-if errorlevel 1 (
+git push -u origin main || (
     echo Trying to push to master branch...
-    git push -u origin master
-    if errorlevel 1 goto :git_err
+    git push -u origin master || echo "Push failed but continuing with Azure deploy..."
 )
 
-echo GitHub push completed successfully!
+echo GitHub operations completed!
 echo.
 
 REM Create directory on server
