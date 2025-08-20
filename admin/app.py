@@ -372,86 +372,52 @@ def create_app() -> FastAPI:
 
     @app.get("/sync-users", response_class=HTMLResponse)
     async def sync_users():
-        """Sync users from Azure database via SSH"""
+        """Sync users from bot API"""
         try:
-            # Real sync implementation
-            import subprocess
-            import tempfile
-            import os
-            
-            # Azure server details
-            azure_host = "172.188.96.174"
-            azure_user = "azureuser" 
-            azure_key = "C:\\Users\\PC\\Downloads\\ec2.pem"
-            
-            # Create temp file for database
-            with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as tmp_file:
-                temp_db_path = tmp_file.name
-            
-            try:
-                # Download database from Azure server
-                scp_cmd = [
-                    "scp", "-o", "StrictHostKeyChecking=no", 
-                    "-i", azure_key,
-                    f"{azure_user}@{azure_host}:/home/azureuser/bot/bot.db",
-                    temp_db_path
-                ]
-                
-                result = subprocess.run(scp_cmd, capture_output=True, text=True, timeout=30)
-                
-                if result.returncode != 0:
-                    raise Exception(f"SCP failed: {result.stderr}")
-                
-                # Read data from downloaded database
-                import sqlite3
-                azure_conn = sqlite3.connect(temp_db_path)
-                azure_conn.row_factory = sqlite3.Row
-                
-                # Get users from Azure database
-                azure_cursor = azure_conn.execute("SELECT * FROM users")
-                azure_users = azure_cursor.fetchall()
-                
+            # Try to get data from bot API first
+            bot_users = await fetch_from_bot("/users")
+            if bot_users and "users" in bot_users:
+                users_data = bot_users["users"]
+
                 # Insert into Vercel database
                 if database is not None:
                     async with database_connection(database) as vercel_conn:
                         # Clear existing users
                         await vercel_conn.execute("DELETE FROM users")
-                        
-                        # Insert users from Azure
-                        for user in azure_users:
+
+                        # Insert users from API
+                        for user in users_data:
                             await vercel_conn.execute("""
-                                INSERT INTO users (id, tg_user_id, name, created_at, last_seen)
+                                INSERT OR REPLACE INTO users (id, tg_user_id, name, created_at, last_seen)
                                 VALUES (?, ?, ?, ?, ?)
-                            """, (user['id'], user['tg_user_id'], user['name'], 
+                            """, (user['id'], user['tg_user_id'], user['name'],
                                  user['created_at'], user['last_seen']))
-                        
+
                         await vercel_conn.commit()
-                
-                azure_conn.close()
-                users_count = len(azure_users)
-                
+
                 return HTMLResponse(f"""
                 <div style="padding: 20px; background: #d4edda; color: #155724; border-radius: 8px; font-family: Inter;">
                     <h3>✅ Users Sync Completed!</h3>
-                    <p><strong>Synced {users_count} users</strong> từ Azure database</p>
-                    <p>Data source: Azure server (172.188.96.174)</p>
+                    <p><strong>Synced {len(users_data)} users</strong> từ Bot API</p>
+                    <p>Data source: Bot API</p>
                     <p><a href="/debug">🔧 Check Results</a> | <a href="/sync-data">🔄 Back to Sync</a></p>
                 </div>
                 """)
-                
-            finally:
-                # Cleanup temp file
-                if os.path.exists(temp_db_path):
-                    os.unlink(temp_db_path)
-                    
-        except subprocess.TimeoutExpired:
-            return HTMLResponse("""
-            <div style="padding: 20px; background: #f8d7da; color: #721c24; border-radius: 8px;">
-                <h3>❌ Sync Timeout</h3>
-                <p>Connection to Azure server timed out</p>
-                <p><a href="/sync-data">🔄 Try Again</a></p>
-            </div>
-            """)
+            else:
+                return HTMLResponse("""
+                <div style="padding: 20px; background: #f8d7da; color: #721c24; border-radius: 8px;">
+                    <h3>❌ Sync Failed</h3>
+                    <p>Không thể kết nối đến Bot API</p>
+                    <p>Vui lòng kiểm tra:</p>
+                    <ul>
+                        <li>Bot đang chạy</li>
+                        <li>API endpoints đã được expose</li>
+                        <li>Network connection</li>
+                    </ul>
+                    <p><a href="/sync-data">🔄 Try Again</a></p>
+                </div>
+                """)
+
         except Exception as e:
             return HTMLResponse(f"""
             <div style="padding: 20px; background: #f8d7da; color: #721c24; border-radius: 8px;">
@@ -463,15 +429,46 @@ def create_app() -> FastAPI:
 
     @app.get("/sync-expenses", response_class=HTMLResponse)
     async def sync_expenses():
-        """Sync expenses from Azure database"""
+        """Sync expenses from bot API"""
         try:
-            return HTMLResponse("""
-            <div style="padding: 20px; background: #d4edda; color: #155724; border-radius: 8px;">
-                <h3>✅ Expenses Sync Completed!</h3>
-                <p>Demo: Expenses đã được sync từ Azure database</p>
-                <p><a href="/debug">🔧 Check Results</a> | <a href="/sync-data">🔄 Back to Sync</a></p>
-            </div>
-            """)
+            # Try to get data from bot API first
+            bot_expenses = await fetch_from_bot("/expenses")
+            if bot_expenses and "expenses" in bot_expenses:
+                expenses_data = bot_expenses["expenses"]
+
+                # Insert into Vercel database
+                if database is not None:
+                    async with database_connection(database) as vercel_conn:
+                        # Clear existing expenses
+                        await vercel_conn.execute("DELETE FROM expenses")
+
+                        # Insert expenses from API
+                        for expense in expenses_data:
+                            await vercel_conn.execute("""
+                                INSERT OR REPLACE INTO expenses (id, trip_id, payer_user_id, amount, currency, note, created_at)
+                                VALUES (?, ?, ?, ?, ?, ?, ?)
+                            """, (expense['id'], expense['trip_id'], expense['payer_user_id'],
+                                 expense['amount'], expense['currency'], expense['note'], expense['created_at']))
+
+                        await vercel_conn.commit()
+
+                return HTMLResponse(f"""
+                <div style="padding: 20px; background: #d4edda; color: #155724; border-radius: 8px; font-family: Inter;">
+                    <h3>✅ Expenses Sync Completed!</h3>
+                    <p><strong>Synced {len(expenses_data)} expenses</strong> từ Bot API</p>
+                    <p>Data source: Bot API</p>
+                    <p><a href="/debug">🔧 Check Results</a> | <a href="/sync-data">🔄 Back to Sync</a></p>
+                </div>
+                """)
+            else:
+                return HTMLResponse("""
+                <div style="padding: 20px; background: #f8d7da; color: #721c24; border-radius: 8px;">
+                    <h3>❌ Sync Failed</h3>
+                    <p>Không thể kết nối đến Bot API</p>
+                    <p><a href="/sync-data">🔄 Try Again</a></p>
+                </div>
+                """)
+
         except Exception as e:
             return HTMLResponse(f"""
             <div style="padding: 20px; background: #f8d7da; color: #721c24; border-radius: 8px;">
@@ -483,116 +480,86 @@ def create_app() -> FastAPI:
 
     @app.get("/sync-all", response_class=HTMLResponse)
     async def sync_all():
-        """Sync all data from Azure database"""
+        """Sync all data from bot API"""
         try:
-            # Real sync implementation for all tables
-            import subprocess
-            import tempfile
-            import os
-            
-            # Azure server details
-            azure_host = "172.188.96.174"
-            azure_user = "azureuser" 
-            azure_key = "C:\\Users\\PC\\Downloads\\ec2.pem"
-            
-            # Create temp file for database
-            with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as tmp_file:
-                temp_db_path = tmp_file.name
-            
+            # Try to get data from bot API
+            tables_synced = []
+
+            # Sync Users
             try:
-                # Download database from Azure server
-                scp_cmd = [
-                    "scp", "-o", "StrictHostKeyChecking=no", 
-                    "-i", azure_key,
-                    f"{azure_user}@{azure_host}:/home/azureuser/bot/bot.db",
-                    temp_db_path
-                ]
-                
-                result = subprocess.run(scp_cmd, capture_output=True, text=True, timeout=60)
-                
-                if result.returncode != 0:
-                    raise Exception(f"SCP failed: {result.stderr}")
-                
-                # Read data from downloaded database
-                import sqlite3
-                azure_conn = sqlite3.connect(temp_db_path)
-                azure_conn.row_factory = sqlite3.Row
-                
-                # Get all data counts
-                tables_synced = []
-                
-                if database is not None:
-                    async with database_connection(database) as vercel_conn:
-                        # Sync Users
-                        azure_cursor = azure_conn.execute("SELECT * FROM users")
-                        azure_users = azure_cursor.fetchall()
-                        await vercel_conn.execute("DELETE FROM users")
-                        for user in azure_users:
-                            await vercel_conn.execute("""
-                                INSERT INTO users (id, tg_user_id, name, created_at, last_seen)
-                                VALUES (?, ?, ?, ?, ?)
-                            """, (user['id'], user['tg_user_id'], user['name'], 
-                                 user['created_at'], user['last_seen']))
-                        tables_synced.append(f"Users: {len(azure_users)}")
-                        
-                        # Sync Expenses
-                        try:
-                            azure_cursor = azure_conn.execute("SELECT * FROM expenses")
-                            azure_expenses = azure_cursor.fetchall()
+                bot_users = await fetch_from_bot("/users")
+                if bot_users and "users" in bot_users:
+                    users_data = bot_users["users"]
+                    if database is not None:
+                        async with database_connection(database) as vercel_conn:
+                            await vercel_conn.execute("DELETE FROM users")
+                            for user in users_data:
+                                await vercel_conn.execute("""
+                                    INSERT OR REPLACE INTO users (id, tg_user_id, name, created_at, last_seen)
+                                    VALUES (?, ?, ?, ?, ?)
+                                """, (user['id'], user['tg_user_id'], user['name'],
+                                     user['created_at'], user['last_seen']))
+                            await vercel_conn.commit()
+                    tables_synced.append(f"Users: {len(users_data)}")
+                else:
+                    tables_synced.append("Users: API not available")
+            except Exception as e:
+                tables_synced.append(f"Users: Error - {str(e)}")
+
+            # Sync Expenses
+            try:
+                bot_expenses = await fetch_from_bot("/expenses")
+                if bot_expenses and "expenses" in bot_expenses:
+                    expenses_data = bot_expenses["expenses"]
+                    if database is not None:
+                        async with database_connection(database) as vercel_conn:
                             await vercel_conn.execute("DELETE FROM expenses")
-                            for expense in azure_expenses:
+                            for expense in expenses_data:
                                 await vercel_conn.execute("""
-                                    INSERT INTO expenses (id, trip_id, payer_user_id, amount, currency, note, created_at)
+                                    INSERT OR REPLACE INTO expenses (id, trip_id, payer_user_id, amount, currency, note, created_at)
                                     VALUES (?, ?, ?, ?, ?, ?, ?)
-                                """, (expense['id'], expense['trip_id'], expense['payer_user_id'], 
+                                """, (expense['id'], expense['trip_id'], expense['payer_user_id'],
                                      expense['amount'], expense['currency'], expense['note'], expense['created_at']))
-                            tables_synced.append(f"Expenses: {len(azure_expenses)}")
-                        except Exception as e:
-                            tables_synced.append(f"Expenses: Error - {str(e)}")
-                        
-                        # Sync Trips
-                        try:
-                            azure_cursor = azure_conn.execute("SELECT * FROM trips")
-                            azure_trips = azure_cursor.fetchall()
+                            await vercel_conn.commit()
+                    tables_synced.append(f"Expenses: {len(expenses_data)}")
+                else:
+                    tables_synced.append("Expenses: API not available")
+            except Exception as e:
+                tables_synced.append(f"Expenses: Error - {str(e)}")
+
+            # Sync Trips (if API available)
+            try:
+                # Note: This assumes bot has /trips endpoint
+                bot_trips = await fetch_from_bot("/trips")
+                if bot_trips and "trips" in bot_trips:
+                    trips_data = bot_trips["trips"]
+                    if database is not None:
+                        async with database_connection(database) as vercel_conn:
                             await vercel_conn.execute("DELETE FROM trips")
-                            for trip in azure_trips:
+                            for trip in trips_data:
                                 await vercel_conn.execute("""
-                                    INSERT INTO trips (id, name, created_by, created_at)
+                                    INSERT OR REPLACE INTO trips (id, name, created_by, created_at)
                                     VALUES (?, ?, ?, ?)
                                 """, (trip['id'], trip['name'], trip['created_by'], trip['created_at']))
-                            tables_synced.append(f"Trips: {len(azure_trips)}")
-                        except Exception as e:
-                            tables_synced.append(f"Trips: Error - {str(e)}")
-                        
-                        await vercel_conn.commit()
-                
-                azure_conn.close()
-                
-                return HTMLResponse(f"""
-                <div style="padding: 20px; background: #d4edda; color: #155724; border-radius: 8px; font-family: Inter;">
-                    <h3>✅ Full Sync Completed!</h3>
-                    <p><strong>Synced data từ Azure database:</strong></p>
-                    <ul>
-                        {''.join([f'<li>{table}</li>' for table in tables_synced])}
-                    </ul>
-                    <p>Data source: Azure server (172.188.96.174)</p>
-                    <p><a href="/debug">🔧 Check Results</a> | <a href="/sync-data">🔄 Back to Sync</a></p>
-                </div>
-                """)
-                
-            finally:
-                # Cleanup temp file
-                if os.path.exists(temp_db_path):
-                    os.unlink(temp_db_path)
-                    
-        except subprocess.TimeoutExpired:
-            return HTMLResponse("""
-            <div style="padding: 20px; background: #f8d7da; color: #721c24; border-radius: 8px;">
-                <h3>❌ Sync Timeout</h3>
-                <p>Connection to Azure server timed out</p>
-                <p><a href="/sync-data">🔄 Try Again</a></p>
+                            await vercel_conn.commit()
+                    tables_synced.append(f"Trips: {len(trips_data)}")
+                else:
+                    tables_synced.append("Trips: API not available")
+            except Exception as e:
+                tables_synced.append(f"Trips: Error - {str(e)}")
+
+            return HTMLResponse(f"""
+            <div style="padding: 20px; background: #d4edda; color: #155724; border-radius: 8px; font-family: Inter;">
+                <h3>✅ Full Sync Completed!</h3>
+                <p><strong>Synced data từ Bot API:</strong></p>
+                <ul>
+                    {''.join([f'<li>{table}</li>' for table in tables_synced])}
+                </ul>
+                <p>Data source: Bot API ({BOT_API_BASE})</p>
+                <p><a href="/debug">🔧 Check Results</a> | <a href="/sync-data">🔄 Back to Sync</a></p>
             </div>
             """)
+
         except Exception as e:
             return HTMLResponse(f"""
             <div style="padding: 20px; background: #f8d7da; color: #721c24; border-radius: 8px;">
