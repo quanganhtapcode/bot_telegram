@@ -65,9 +65,65 @@ def create_app() -> FastAPI:
     db_path = os.getenv("DATABASE_PATH", "bot.db")
     database = Database(db_path)
 
+    # Helper functions for database operations
+    async def database_connection(db):
+        """Context manager for database connections"""
+        conn = await db.get_connection()
+        try:
+            yield conn
+        finally:
+            await conn.close()
+
+    async def count_query(conn, query, params=None):
+        """Execute count query and return result"""
+        try:
+            cursor = await conn.execute(query, params or ())
+            result = await cursor.fetchone()
+            return result[0] if result else 0
+        except Exception as e:
+            print(f"Count query error: {e}")
+            return 0
+
+    async def fetch_all(conn, query, params=None):
+        """Execute query and return all results"""
+        try:
+            cursor = await conn.execute(query, params or ())
+            results = await cursor.fetchall()
+            return results
+        except Exception as e:
+            print(f"Fetch all error: {e}")
+            return []
+
+    async def fetch_one(conn, query, params=None):
+        """Execute query and return single result"""
+        try:
+            cursor = await conn.execute(query, params or ())
+            result = await cursor.fetchone()
+            return result
+        except Exception as e:
+            print(f"Fetch one error: {e}")
+            return None
+
     @app.get("/health", response_class=PlainTextResponse)
     async def health():
         return "ok"
+
+    @app.get("/test", response_class=HTMLResponse)
+    async def test_page(request: Request):
+        """Simple test page without database or auth"""
+        return HTMLResponse("""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Vercel Test</title>
+        </head>
+        <body>
+            <h1>✅ Vercel is working!</h1>
+            <p>This is a simple test page without database or authentication.</p>
+            <p>Time: """ + str(datetime.now()) + """</p>
+        </body>
+        </html>
+        """)
 
     @app.get("/favicon.ico", include_in_schema=False)
     async def favicon():
@@ -76,11 +132,18 @@ def create_app() -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse)
     async def dashboard(request: Request, _=Depends(basic_auth_dependency)):
-        # Basic stats
-        async with database_connection(database) as conn:
-            users_count = await count_query(conn, "SELECT COUNT(*) FROM users")
-            trips_count = await count_query(conn, "SELECT COUNT(*) FROM trips")
-            expenses_count = await count_query(conn, "SELECT COUNT(*) FROM expenses")
+        try:
+            # Basic stats
+            async with database_connection(database) as conn:
+                users_count = await count_query(conn, "SELECT COUNT(*) FROM users")
+                trips_count = await count_query(conn, "SELECT COUNT(*) FROM trips")
+                expenses_count = await count_query(conn, "SELECT COUNT(*) FROM expenses")
+        except Exception as e:
+            print(f"Database error in dashboard: {e}")
+            # Fallback values if database fails
+            users_count = 0
+            trips_count = 0
+            expenses_count = 0
 
         return templates.TemplateResponse(
             "dashboard.html",
@@ -93,10 +156,34 @@ def create_app() -> FastAPI:
             },
         )
 
+    @app.get("/simple", response_class=HTMLResponse)
+    async def simple_dashboard(request: Request):
+        """Simple dashboard without database or auth for testing"""
+        return HTMLResponse("""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Admin Panel - Simple</title>
+            <meta charset="utf-8">
+        </head>
+        <body>
+            <h1>✅ Admin Panel is Working!</h1>
+            <p>This is a simple test page without database or authentication.</p>
+            <p>Time: """ + str(datetime.now()) + """</p>
+            <hr>
+            <p><a href="/test">Test Page</a> | <a href="/health">Health Check</a></p>
+        </body>
+        </html>
+        """)
+
     @app.get("/users", response_class=HTMLResponse)
     async def users(request: Request, _=Depends(basic_auth_dependency)):
-        async with database_connection(database) as conn:
-            rows = await fetch_all(conn, "SELECT id, tg_user_id, name, created_at, last_seen FROM users ORDER BY created_at DESC LIMIT 200")
+        try:
+            async with database_connection(database) as conn:
+                rows = await fetch_all(conn, "SELECT id, tg_user_id, name, created_at, last_seen FROM users ORDER BY created_at DESC LIMIT 200")
+        except Exception as e:
+            print(f"Database error in users: {e}")
+            rows = []
         return templates.TemplateResponse("users.html", {"request": request, "users": rows})
 
     @app.get("/expenses", response_class=HTMLResponse)

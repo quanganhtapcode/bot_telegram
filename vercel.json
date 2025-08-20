@@ -13,6 +13,7 @@
     }
   ],
   "env": {
-    "PYTHONPATH": "."
+    "PYTHONPATH": ".",
+    "DATABASE_PATH": "/tmp/bot.db"
   }
 }
