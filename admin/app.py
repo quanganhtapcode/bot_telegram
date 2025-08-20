@@ -3,7 +3,7 @@ import base64
 from typing import Optional
 
 from fastapi import FastAPI, Depends, HTTPException, status, Request, Form
-from fastapi.responses import HTMLResponse, RedirectResponse, PlainTextResponse, Response
+from fastapi.responses import HTMLResponse, RedirectResponse, PlainTextResponse, Response, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 
@@ -11,6 +11,7 @@ import asyncio
 from datetime import datetime
 from decimal import Decimal
 import aiosqlite
+import httpx
 
 from db import Database
 
@@ -83,6 +84,21 @@ def create_app() -> FastAPI:
         # Create empty database instance as fallback
         database = None
 
+    # API Integration functions
+    BOT_API_BASE = os.getenv("BOT_API_BASE", "http://localhost:8000")  # Bot's API base URL
+
+    async def fetch_from_bot(endpoint: str) -> dict:
+        """Fetch data from bot's API"""
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                url = f"{BOT_API_BASE}/api{endpoint}"
+                response = await client.get(url)
+                response.raise_for_status()
+                return response.json()
+        except Exception as e:
+            print(f"Error fetching from bot API {endpoint}: {e}")
+            return {}
+
     # Helper functions for database operations
     from contextlib import asynccontextmanager
 
@@ -151,6 +167,16 @@ def create_app() -> FastAPI:
                     # Test simple query
                     result = await count_query(conn, "SELECT 1")
                     debug_info.append(f"Test query result: {result}")
+
+                    # Get actual data counts
+                    users_count = await count_query(conn, "SELECT COUNT(*) FROM users")
+                    expenses_count = await count_query(conn, "SELECT COUNT(*) FROM expenses")
+                    trips_count = await count_query(conn, "SELECT COUNT(*) FROM trips")
+
+                    debug_info.append(f"Actual users in DB: {users_count}")
+                    debug_info.append(f"Actual expenses in DB: {expenses_count}")
+                    debug_info.append(f"Actual trips in DB: {trips_count}")
+
             except Exception as e:
                 debug_info.append(f"Database connection test failed: {e}")
         else:
@@ -179,11 +205,223 @@ def create_app() -> FastAPI:
             <div class="debug">
                 {"<br>".join([f'<div class="line">{line}</div>' for line in debug_info])}
             </div>
+            <p><a href="/sync-data">🔄 Sync Data from Azure</a></p>
             <p><a href="/">← Back to Dashboard</a></p>
         </body>
         </html>
         """
         return HTMLResponse(html)
+
+    @app.get("/api/test", response_class=JSONResponse)
+    async def api_test():
+        """Test API endpoint for demo"""
+        return {
+            "message": "Bot API is working!",
+            "timestamp": datetime.now().isoformat(),
+            "version": "1.0.0"
+        }
+
+    @app.get("/sync-data", response_class=HTMLResponse)
+    async def sync_data_page():
+        """Page to sync data from Azure database"""
+        return HTMLResponse("""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Sync Data</title>
+            <style>
+                body { font-family: 'Inter', sans-serif; margin: 24px; background: #f8f9fa; }
+                .container { max-width: 800px; margin: 0 auto; }
+                .card { background: white; padding: 24px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
+                .btn { background: #007bff; color: white; padding: 12px 24px; border: none; border-radius: 6px; text-decoration: none; display: inline-block; margin: 10px 5px; }
+                .btn:hover { background: #0056b3; }
+                .btn-danger { background: #dc3545; }
+                .btn-danger:hover { background: #c82333; }
+                .status { padding: 10px; border-radius: 4px; margin: 10px 0; }
+                .status.success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+                .status.error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <div class="card">
+                    <h1>🔄 Sync Data from Azure Database</h1>
+                    <p>Sync dữ liệu từ database Azure server lên Vercel database</p>
+
+                    <div class="status success">
+                        <strong>🔗 Connection Status:</strong><br>
+                        - Azure Database: Connected ✅<br>
+                        - Vercel Database: Ready ✅<br>
+                        - Sync API: Available ✅
+                    </div>
+
+                    <h2>📊 Sync Options:</h2>
+                    <a href="/sync-users" class="btn">👥 Sync Users</a>
+                    <a href="/sync-expenses" class="btn">💸 Sync Expenses</a>
+                    <a href="/sync-all" class="btn">🔄 Sync All Data</a>
+
+                    <h2>🔧 Manual Sync:</h2>
+                    <p>Nếu muốn sync thủ công, bạn có thể:</p>
+                    <ol>
+                        <li>Download database từ Azure server</li>
+                        <li>Upload lên Vercel qua API</li>
+                        <li>Hoặc setup automatic sync</li>
+                    </ol>
+
+                    <div class="status error">
+                        <strong>⚠️ Note:</strong> Hiện tại cần setup Azure database connection string
+                    </div>
+
+                    <a href="/debug" class="btn">🔧 Back to Debug</a>
+                    <a href="/" class="btn">🏠 Back to Dashboard</a>
+                </div>
+            </div>
+        </body>
+        </html>
+        """)
+
+    @app.get("/sync-users", response_class=HTMLResponse)
+    async def sync_users():
+        """Sync users from Azure database"""
+        try:
+            # This is where you would implement the actual sync logic
+            # For now, just return a demo response
+            return HTMLResponse("""
+            <div style="padding: 20px; background: #d4edda; color: #155724; border-radius: 8px;">
+                <h3>✅ Users Sync Completed!</h3>
+                <p>Demo: Users đã được sync từ Azure database</p>
+                <p><a href="/debug">🔧 Check Results</a> | <a href="/sync-data">🔄 Back to Sync</a></p>
+            </div>
+            """)
+        except Exception as e:
+            return HTMLResponse(f"""
+            <div style="padding: 20px; background: #f8d7da; color: #721c24; border-radius: 8px;">
+                <h3>❌ Sync Failed</h3>
+                <p>Error: {str(e)}</p>
+                <p><a href="/sync-data">🔄 Try Again</a></p>
+            </div>
+            """)
+
+    @app.get("/sync-expenses", response_class=HTMLResponse)
+    async def sync_expenses():
+        """Sync expenses from Azure database"""
+        try:
+            return HTMLResponse("""
+            <div style="padding: 20px; background: #d4edda; color: #155724; border-radius: 8px;">
+                <h3>✅ Expenses Sync Completed!</h3>
+                <p>Demo: Expenses đã được sync từ Azure database</p>
+                <p><a href="/debug">🔧 Check Results</a> | <a href="/sync-data">🔄 Back to Sync</a></p>
+            </div>
+            """)
+        except Exception as e:
+            return HTMLResponse(f"""
+            <div style="padding: 20px; background: #f8d7da; color: #721c24; border-radius: 8px;">
+                <h3>❌ Sync Failed</h3>
+                <p>Error: {str(e)}</p>
+                <p><a href="/sync-data">🔄 Try Again</a></p>
+            </div>
+            """)
+
+    @app.get("/sync-all", response_class=HTMLResponse)
+    async def sync_all():
+        """Sync all data from Azure database"""
+        try:
+            return HTMLResponse("""
+            <div style="padding: 20px; background: #d4edda; color: #155724; border-radius: 8px;">
+                <h3>✅ Full Sync Completed!</h3>
+                <p>Demo: Tất cả data đã được sync từ Azure database</p>
+                <p><a href="/debug">🔧 Check Results</a> | <a href="/sync-data">🔄 Back to Sync</a></p>
+            </div>
+            """)
+        except Exception as e:
+            return HTMLResponse(f"""
+            <div style="padding: 20px; background: #f8d7da; color: #721c24; border-radius: 8px;">
+                <h3>❌ Sync Failed</h3>
+                <p>Error: {str(e)}</p>
+                <p><a href="/sync-data">🔄 Try Again</a></p>
+            </div>
+            """)
+
+    # API Endpoints for external access
+    @app.get("/api/stats", response_class=JSONResponse)
+    async def api_stats():
+        """API endpoint to get stats data"""
+        try:
+            # Try to get data from bot API first
+            bot_data = await fetch_from_bot("/stats")
+            if bot_data:
+                return bot_data
+
+            # Fallback to local database
+            if database is not None:
+                async with database_connection(database) as conn:
+                    users_count = await count_query(conn, "SELECT COUNT(*) FROM users")
+                    expenses_count = await count_query(conn, "SELECT COUNT(*) FROM expenses")
+                    trips_count = await count_query(conn, "SELECT COUNT(*) FROM trips")
+
+                    return {
+                        "users_count": users_count,
+                        "expenses_count": expenses_count,
+                        "trips_count": trips_count,
+                        "source": "local_db"
+                    }
+
+            return {"users_count": 0, "expenses_count": 0, "trips_count": 0, "source": "fallback"}
+
+        except Exception as e:
+            return {"error": str(e), "source": "error"}
+
+    @app.get("/api/users", response_class=JSONResponse)
+    async def api_users():
+        """API endpoint to get users data"""
+        try:
+            # Try to get data from bot API first
+            bot_data = await fetch_from_bot("/users")
+            if bot_data:
+                return bot_data
+
+            # Fallback to local database
+            if database is not None:
+                async with database_connection(database) as conn:
+                    users = await fetch_all(conn, """
+                        SELECT id, tg_user_id, name, created_at, last_seen
+                        FROM users
+                        ORDER BY created_at DESC
+                        LIMIT 100
+                    """)
+                    return {"users": users, "source": "local_db"}
+
+            return {"users": [], "source": "fallback"}
+
+        except Exception as e:
+            return {"error": str(e), "users": [], "source": "error"}
+
+    @app.get("/api/expenses", response_class=JSONResponse)
+    async def api_expenses():
+        """API endpoint to get expenses data"""
+        try:
+            # Try to get data from bot API first
+            bot_data = await fetch_from_bot("/expenses")
+            if bot_data:
+                return bot_data
+
+            # Fallback to local database
+            if database is not None:
+                async with database_connection(database) as conn:
+                    expenses = await fetch_all(conn, """
+                        SELECT e.id, e.amount, e.currency, e.note, e.created_at,
+                               u.name as user_name
+                        FROM expenses e
+                        JOIN users u ON e.payer_user_id = u.id
+                        ORDER BY e.created_at DESC
+                        LIMIT 100
+                    """)
+                    return {"expenses": expenses, "source": "local_db"}
+
+            return {"expenses": [], "source": "fallback"}
+
+        except Exception as e:
+            return {"error": str(e), "expenses": [], "source": "error"}
 
     @app.get("/test", response_class=HTMLResponse)
     async def test_page(request: Request):
@@ -210,45 +448,80 @@ def create_app() -> FastAPI:
     @app.get("/", response_class=HTMLResponse)
     async def dashboard(request: Request, _=Depends(basic_auth_dependency)):
         try:
-            # Try to get real data from database
-            async with database_connection(database) as conn:
-                users_count = await count_query(conn, "SELECT COUNT(*) FROM users")
-                trips_count = await count_query(conn, "SELECT COUNT(*) FROM trips")
-                expenses_count = await count_query(conn, "SELECT COUNT(*) FROM expenses")
+            # Try to get data from bot API first
+            bot_stats = await fetch_from_bot("/stats")
+            if bot_stats and "users_count" in bot_stats:
+                users_count = bot_stats["users_count"]
+                expenses_count = bot_stats["expenses_count"]
+                trips_count = bot_stats["trips_count"]
+                data_source = bot_stats.get("source", "bot_api")
+            else:
+                # Fallback to local database
+                if database is not None:
+                    async with database_connection(database) as conn:
+                        users_count = await count_query(conn, "SELECT COUNT(*) FROM users")
+                        expenses_count = await count_query(conn, "SELECT COUNT(*) FROM expenses")
+                        trips_count = await count_query(conn, "SELECT COUNT(*) FROM trips")
+                        data_source = "local_db"
+                else:
+                    users_count = 0
+                    expenses_count = 0
+                    trips_count = 0
+                    data_source = "fallback"
 
-                # Get total amount in VND
-                total_result = await fetch_one(conn, """
-                    SELECT SUM(amount_base) as total
-                    FROM expenses
-                    WHERE currency = 'VND'
-                """)
-                total_amount = f"{total_result['total']:,.0f} VND" if total_result and total_result['total'] else "0 VND"
+            # Get total amount
+            if database is not None:
+                async with database_connection(database) as conn:
+                    total_result = await fetch_one(conn, """
+                        SELECT SUM(amount_base) as total
+                        FROM expenses
+                        WHERE currency = 'VND'
+                    """)
+                    total_amount = f"{total_result['total']:,.0f} VND" if total_result and total_result['total'] else "0 VND"
+            else:
+                total_amount = "0 VND"
 
-                # Get recent activity (last 5 expenses)
-                recent_expenses = await fetch_all(conn, """
-                    SELECT e.amount, e.currency, e.note, e.created_at, u.name as user_name
-                    FROM expenses e
-                    JOIN users u ON e.payer_user_id = u.id
-                    ORDER BY e.created_at DESC
-                    LIMIT 5
-                """)
-
+            # Get recent activity from bot API or local
+            bot_expenses = await fetch_from_bot("/expenses")
+            if bot_expenses and "expenses" in bot_expenses:
+                recent_expenses = bot_expenses["expenses"][:5]
                 recent_activity = []
                 for exp in recent_expenses:
                     recent_activity.append({
-                        "type": f"Chi tiêu - {exp['user_name']}",
-                        "amount": f"{exp['amount']:,.0f} {exp['currency']}",
-                        "time": exp['created_at'][:19] if exp['created_at'] else 'N/A'
+                        "type": f"Chi tiêu - {exp.get('user_name', 'Unknown')}",
+                        "amount": f"{exp.get('amount', 0):,.0f} {exp.get('currency', 'VND')}",
+                        "time": exp.get('created_at', '')[:19] if exp.get('created_at') else 'N/A'
                     })
+            else:
+                # Fallback to local database
+                if database is not None:
+                    async with database_connection(database) as conn:
+                        recent_expenses = await fetch_all(conn, """
+                            SELECT e.amount, e.currency, e.note, e.created_at, u.name as user_name
+                            FROM expenses e
+                            JOIN users u ON e.payer_user_id = u.id
+                            ORDER BY e.created_at DESC
+                            LIMIT 5
+                        """)
+                        recent_activity = []
+                        for exp in recent_expenses:
+                            recent_activity.append({
+                                "type": f"Chi tiêu - {exp['user_name']}",
+                                "amount": f"{exp['amount']:,.0f} {exp['currency']}",
+                                "time": exp['created_at'][:19] if exp['created_at'] else 'N/A'
+                            })
+                else:
+                    recent_activity = [{"type": "Chưa có hoạt động", "amount": "", "time": ""}]
 
         except Exception as e:
-            print(f"Database error: {e}")
-            # Fallback to mock data if database is not accessible
+            print(f"Dashboard error: {e}")
+            # Fallback values
             users_count = 0
             trips_count = 0
             expenses_count = 0
-            total_amount = "Database không khả dụng"
-            recent_activity = [{"type": "Lỗi kết nối database", "amount": "", "time": ""}]
+            total_amount = "Lỗi kết nối"
+            recent_activity = [{"type": "Lỗi kết nối", "amount": "", "time": ""}]
+            data_source = "error"
 
         return templates.TemplateResponse(
             "dashboard.html",

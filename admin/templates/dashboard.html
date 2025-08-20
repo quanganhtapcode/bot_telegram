@@ -23,7 +23,7 @@
         margin-bottom: 32px;
         text-align: center;
       }
-      .header h1 {
+            .header h1 {
         color: #111111;
         font-size: 2rem;
         font-weight: 600;
@@ -33,6 +33,16 @@
         color: #666666;
         font-size: 1rem;
         font-weight: 400;
+      }
+      .data-source {
+        display: inline-block;
+        background: #e3f2fd;
+        color: #1565c0;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 0.75rem;
+        font-weight: 500;
+        margin-top: 8px;
       }
       .stats-grid {
         display: grid;
@@ -163,6 +173,7 @@
       <div class="header">
         <h1>🤖 Bot Admin Dashboard</h1>
         <p class="subtitle">Quản lý Telegram Bot - Cập nhật lúc {{ now.strftime('%H:%M:%S - %d/%m/%Y') }}</p>
+        <div class="data-source">Nguồn dữ liệu: {{ data_source|upper }}</div>
       </div>
 
       <div class="total-amount">
