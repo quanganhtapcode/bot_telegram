@@ -83,6 +83,9 @@ def create_app() -> FastAPI:
         database = None
 
     # Helper functions for database operations
+    from contextlib import asynccontextmanager
+
+    @asynccontextmanager
     async def database_connection(db):
         """Context manager for database connections"""
         if db is None:
