@@ -66,7 +66,6 @@ def create_app() -> FastAPI:
     print(f"Database path: {db_path}")
 
     # Check if database file exists
-    import os
     if os.path.exists(db_path):
         print(f"Database file exists: {db_path}")
     else:
