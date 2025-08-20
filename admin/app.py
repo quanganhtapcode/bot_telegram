@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 import asyncio
 from datetime import datetime
 from decimal import Decimal
+import aiosqlite
 
 from db import Database
 
@@ -90,7 +91,7 @@ def create_app() -> FastAPI:
         """Context manager for database connections"""
         if db is None:
             raise Exception("Database not initialized")
-        conn = await db.get_connection()
+        conn = await aiosqlite.connect(db.db_path)
         try:
             yield conn
         finally:
