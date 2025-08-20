@@ -132,28 +132,56 @@ def create_app() -> FastAPI:
 
     @app.get("/", response_class=HTMLResponse)
     async def dashboard(request: Request, _=Depends(basic_auth_dependency)):
-        # Use mock data for now since database is not accessible on Vercel
-        mock_data = {
-            "users_count": 25,
-            "trips_count": 8,
-            "expenses_count": 156,
-            "total_amount": "2,450,000 VND",
-            "recent_activity": [
-                {"type": "Chi tiêu nhóm", "amount": "150,000 VND", "time": "2 phút trước"},
-                {"type": "Nạp tiền ví", "amount": "500,000 VND", "time": "15 phút trước"},
-                {"type": "Chi tiêu cá nhân", "amount": "75,000 VND", "time": "1 giờ trước"},
-            ]
-        }
-        
+        try:
+            # Try to get real data from database
+            async with database_connection(database) as conn:
+                users_count = await count_query(conn, "SELECT COUNT(*) FROM users")
+                trips_count = await count_query(conn, "SELECT COUNT(*) FROM trips")
+                expenses_count = await count_query(conn, "SELECT COUNT(*) FROM expenses")
+
+                # Get total amount in VND
+                total_result = await fetch_one(conn, """
+                    SELECT SUM(amount_base) as total
+                    FROM expenses
+                    WHERE currency = 'VND'
+                """)
+                total_amount = f"{total_result['total']:,.0f} VND" if total_result and total_result['total'] else "0 VND"
+
+                # Get recent activity (last 5 expenses)
+                recent_expenses = await fetch_all(conn, """
+                    SELECT e.amount, e.currency, e.note, e.created_at, u.name as user_name
+                    FROM expenses e
+                    JOIN users u ON e.payer_user_id = u.id
+                    ORDER BY e.created_at DESC
+                    LIMIT 5
+                """)
+
+                recent_activity = []
+                for exp in recent_expenses:
+                    recent_activity.append({
+                        "type": f"Chi tiêu - {exp['user_name']}",
+                        "amount": f"{exp['amount']:,.0f} {exp['currency']}",
+                        "time": exp['created_at'][:19] if exp['created_at'] else 'N/A'
+                    })
+
+        except Exception as e:
+            print(f"Database error: {e}")
+            # Fallback to mock data if database is not accessible
+            users_count = 0
+            trips_count = 0
+            expenses_count = 0
+            total_amount = "Database không khả dụng"
+            recent_activity = [{"type": "Lỗi kết nối database", "amount": "", "time": ""}]
+
         return templates.TemplateResponse(
             "dashboard.html",
             {
                 "request": request,
-                "users_count": mock_data["users_count"],
-                "trips_count": mock_data["trips_count"],
-                "expenses_count": mock_data["expenses_count"],
-                "total_amount": mock_data["total_amount"],
-                "recent_activity": mock_data["recent_activity"],
+                "users_count": users_count,
+                "trips_count": trips_count,
+                "expenses_count": expenses_count,
+                "total_amount": total_amount,
+                "recent_activity": recent_activity,
                 "now": datetime.now(),
             },
         )
