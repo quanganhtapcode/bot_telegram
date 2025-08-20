@@ -264,29 +264,192 @@ def create_app() -> FastAPI:
                         <li>Hoặc setup automatic sync</li>
                     </ol>
 
+                    <div class="status success">
+                        <strong>🔄 Auto Sync Status:</strong> Enabled<br>
+                        - Auto sync mỗi 5 phút<br>
+                        - Real-time data updates<br>
+                        - Background sync không gián đoạn
+                    </div>
                     <div class="status error">
-                        <strong>⚠️ Note:</strong> Hiện tại cần setup Azure database connection string
+                        <strong>⚠️ Note:</strong> Auto sync chỉ hoạt động khi có người truy cập website
                     </div>
 
                     <a href="/debug" class="btn">🔧 Back to Debug</a>
                     <a href="/" class="btn">🏠 Back to Dashboard</a>
+                    <a href="javascript:startAutoSync()" class="btn" id="autoSyncBtn">▶️ Start Auto Sync</a>
                 </div>
             </div>
+
+            <script>
+            let autoSyncInterval;
+            let isAutoSyncRunning = false;
+
+            function startAutoSync() {
+                if (isAutoSyncRunning) {
+                    stopAutoSync();
+                    return;
+                }
+
+                isAutoSyncRunning = true;
+                const btn = document.getElementById('autoSyncBtn');
+                btn.innerHTML = '⏸️ Stop Auto Sync';
+                btn.classList.add('btn-danger');
+                btn.classList.remove('btn');
+
+                // Sync ngay lập tức
+                syncAllData();
+
+                // Setup auto sync mỗi 5 phút
+                autoSyncInterval = setInterval(syncAllData, 5 * 60 * 1000);
+
+                showStatus('✅ Auto sync started! Will sync every 5 minutes.', 'success');
+            }
+
+            function stopAutoSync() {
+                isAutoSyncRunning = false;
+                const btn = document.getElementById('autoSyncBtn');
+                btn.innerHTML = '▶️ Start Auto Sync';
+                btn.classList.remove('btn-danger');
+                btn.classList.add('btn');
+
+                if (autoSyncInterval) {
+                    clearInterval(autoSyncInterval);
+                }
+
+                showStatus('⏸️ Auto sync stopped.', 'error');
+            }
+
+            async function syncAllData() {
+                try {
+                    showStatus('🔄 Syncing data...', 'success');
+
+                    const response = await fetch('/sync-all');
+                    const html = await response.text();
+
+                    // Create a temp div to parse the response
+                    const tempDiv = document.createElement('div');
+                    tempDiv.innerHTML = html;
+                    const resultDiv = tempDiv.querySelector('div');
+
+                    if (resultDiv && resultDiv.innerHTML.includes('✅ Full Sync Completed')) {
+                        showStatus('✅ Auto sync completed successfully!', 'success');
+                        // Reload page after 3 seconds to show new data
+                        setTimeout(() => window.location.reload(), 3000);
+                    } else {
+                        showStatus('❌ Auto sync failed. Will retry in 5 minutes.', 'error');
+                    }
+                } catch (error) {
+                    showStatus('❌ Auto sync error: ' + error.message, 'error');
+                }
+            }
+
+            function showStatus(message, type) {
+                // Remove existing status
+                const existingStatus = document.querySelector('.auto-sync-status');
+                if (existingStatus) {
+                    existingStatus.remove();
+                }
+
+                // Create new status div
+                const statusDiv = document.createElement('div');
+                statusDiv.className = `status ${type} auto-sync-status`;
+                statusDiv.innerHTML = message;
+
+                // Insert after the card
+                const card = document.querySelector('.card');
+                card.appendChild(statusDiv);
+            }
+
+            // Auto start auto sync when page loads
+            window.addEventListener('load', function() {
+                // Start auto sync after 10 seconds
+                setTimeout(startAutoSync, 10000);
+            });
+            </script>
         </body>
         </html>
         """)
 
     @app.get("/sync-users", response_class=HTMLResponse)
     async def sync_users():
-        """Sync users from Azure database"""
+        """Sync users from Azure database via SSH"""
         try:
-            # This is where you would implement the actual sync logic
-            # For now, just return a demo response
+            # Real sync implementation
+            import subprocess
+            import tempfile
+            import os
+            
+            # Azure server details
+            azure_host = "172.188.96.174"
+            azure_user = "azureuser" 
+            azure_key = "C:\\Users\\PC\\Downloads\\ec2.pem"
+            
+            # Create temp file for database
+            with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as tmp_file:
+                temp_db_path = tmp_file.name
+            
+            try:
+                # Download database from Azure server
+                scp_cmd = [
+                    "scp", "-o", "StrictHostKeyChecking=no", 
+                    "-i", azure_key,
+                    f"{azure_user}@{azure_host}:/home/azureuser/bot/bot.db",
+                    temp_db_path
+                ]
+                
+                result = subprocess.run(scp_cmd, capture_output=True, text=True, timeout=30)
+                
+                if result.returncode != 0:
+                    raise Exception(f"SCP failed: {result.stderr}")
+                
+                # Read data from downloaded database
+                import sqlite3
+                azure_conn = sqlite3.connect(temp_db_path)
+                azure_conn.row_factory = sqlite3.Row
+                
+                # Get users from Azure database
+                azure_cursor = azure_conn.execute("SELECT * FROM users")
+                azure_users = azure_cursor.fetchall()
+                
+                # Insert into Vercel database
+                if database is not None:
+                    async with database_connection(database) as vercel_conn:
+                        # Clear existing users
+                        await vercel_conn.execute("DELETE FROM users")
+                        
+                        # Insert users from Azure
+                        for user in azure_users:
+                            await vercel_conn.execute("""
+                                INSERT INTO users (id, tg_user_id, name, created_at, last_seen)
+                                VALUES (?, ?, ?, ?, ?)
+                            """, (user['id'], user['tg_user_id'], user['name'], 
+                                 user['created_at'], user['last_seen']))
+                        
+                        await vercel_conn.commit()
+                
+                azure_conn.close()
+                users_count = len(azure_users)
+                
+                return HTMLResponse(f"""
+                <div style="padding: 20px; background: #d4edda; color: #155724; border-radius: 8px; font-family: Inter;">
+                    <h3>✅ Users Sync Completed!</h3>
+                    <p><strong>Synced {users_count} users</strong> từ Azure database</p>
+                    <p>Data source: Azure server (172.188.96.174)</p>
+                    <p><a href="/debug">🔧 Check Results</a> | <a href="/sync-data">🔄 Back to Sync</a></p>
+                </div>
+                """)
+                
+            finally:
+                # Cleanup temp file
+                if os.path.exists(temp_db_path):
+                    os.unlink(temp_db_path)
+                    
+        except subprocess.TimeoutExpired:
             return HTMLResponse("""
-            <div style="padding: 20px; background: #d4edda; color: #155724; border-radius: 8px;">
-                <h3>✅ Users Sync Completed!</h3>
-                <p>Demo: Users đã được sync từ Azure database</p>
-                <p><a href="/debug">🔧 Check Results</a> | <a href="/sync-data">🔄 Back to Sync</a></p>
+            <div style="padding: 20px; background: #f8d7da; color: #721c24; border-radius: 8px;">
+                <h3>❌ Sync Timeout</h3>
+                <p>Connection to Azure server timed out</p>
+                <p><a href="/sync-data">🔄 Try Again</a></p>
             </div>
             """)
         except Exception as e:
@@ -322,11 +485,112 @@ def create_app() -> FastAPI:
     async def sync_all():
         """Sync all data from Azure database"""
         try:
+            # Real sync implementation for all tables
+            import subprocess
+            import tempfile
+            import os
+            
+            # Azure server details
+            azure_host = "172.188.96.174"
+            azure_user = "azureuser" 
+            azure_key = "C:\\Users\\PC\\Downloads\\ec2.pem"
+            
+            # Create temp file for database
+            with tempfile.NamedTemporaryFile(suffix='.db', delete=False) as tmp_file:
+                temp_db_path = tmp_file.name
+            
+            try:
+                # Download database from Azure server
+                scp_cmd = [
+                    "scp", "-o", "StrictHostKeyChecking=no", 
+                    "-i", azure_key,
+                    f"{azure_user}@{azure_host}:/home/azureuser/bot/bot.db",
+                    temp_db_path
+                ]
+                
+                result = subprocess.run(scp_cmd, capture_output=True, text=True, timeout=60)
+                
+                if result.returncode != 0:
+                    raise Exception(f"SCP failed: {result.stderr}")
+                
+                # Read data from downloaded database
+                import sqlite3
+                azure_conn = sqlite3.connect(temp_db_path)
+                azure_conn.row_factory = sqlite3.Row
+                
+                # Get all data counts
+                tables_synced = []
+                
+                if database is not None:
+                    async with database_connection(database) as vercel_conn:
+                        # Sync Users
+                        azure_cursor = azure_conn.execute("SELECT * FROM users")
+                        azure_users = azure_cursor.fetchall()
+                        await vercel_conn.execute("DELETE FROM users")
+                        for user in azure_users:
+                            await vercel_conn.execute("""
+                                INSERT INTO users (id, tg_user_id, name, created_at, last_seen)
+                                VALUES (?, ?, ?, ?, ?)
+                            """, (user['id'], user['tg_user_id'], user['name'], 
+                                 user['created_at'], user['last_seen']))
+                        tables_synced.append(f"Users: {len(azure_users)}")
+                        
+                        # Sync Expenses
+                        try:
+                            azure_cursor = azure_conn.execute("SELECT * FROM expenses")
+                            azure_expenses = azure_cursor.fetchall()
+                            await vercel_conn.execute("DELETE FROM expenses")
+                            for expense in azure_expenses:
+                                await vercel_conn.execute("""
+                                    INSERT INTO expenses (id, trip_id, payer_user_id, amount, currency, note, created_at)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                                """, (expense['id'], expense['trip_id'], expense['payer_user_id'], 
+                                     expense['amount'], expense['currency'], expense['note'], expense['created_at']))
+                            tables_synced.append(f"Expenses: {len(azure_expenses)}")
+                        except Exception as e:
+                            tables_synced.append(f"Expenses: Error - {str(e)}")
+                        
+                        # Sync Trips
+                        try:
+                            azure_cursor = azure_conn.execute("SELECT * FROM trips")
+                            azure_trips = azure_cursor.fetchall()
+                            await vercel_conn.execute("DELETE FROM trips")
+                            for trip in azure_trips:
+                                await vercel_conn.execute("""
+                                    INSERT INTO trips (id, name, created_by, created_at)
+                                    VALUES (?, ?, ?, ?)
+                                """, (trip['id'], trip['name'], trip['created_by'], trip['created_at']))
+                            tables_synced.append(f"Trips: {len(azure_trips)}")
+                        except Exception as e:
+                            tables_synced.append(f"Trips: Error - {str(e)}")
+                        
+                        await vercel_conn.commit()
+                
+                azure_conn.close()
+                
+                return HTMLResponse(f"""
+                <div style="padding: 20px; background: #d4edda; color: #155724; border-radius: 8px; font-family: Inter;">
+                    <h3>✅ Full Sync Completed!</h3>
+                    <p><strong>Synced data từ Azure database:</strong></p>
+                    <ul>
+                        {''.join([f'<li>{table}</li>' for table in tables_synced])}
+                    </ul>
+                    <p>Data source: Azure server (172.188.96.174)</p>
+                    <p><a href="/debug">🔧 Check Results</a> | <a href="/sync-data">🔄 Back to Sync</a></p>
+                </div>
+                """)
+                
+            finally:
+                # Cleanup temp file
+                if os.path.exists(temp_db_path):
+                    os.unlink(temp_db_path)
+                    
+        except subprocess.TimeoutExpired:
             return HTMLResponse("""
-            <div style="padding: 20px; background: #d4edda; color: #155724; border-radius: 8px;">
-                <h3>✅ Full Sync Completed!</h3>
-                <p>Demo: Tất cả data đã được sync từ Azure database</p>
-                <p><a href="/debug">🔧 Check Results</a> | <a href="/sync-data">🔄 Back to Sync</a></p>
+            <div style="padding: 20px; background: #f8d7da; color: #721c24; border-radius: 8px;">
+                <h3>❌ Sync Timeout</h3>
+                <p>Connection to Azure server timed out</p>
+                <p><a href="/sync-data">🔄 Try Again</a></p>
             </div>
             """)
         except Exception as e:
