@@ -62,12 +62,32 @@ def create_app() -> FastAPI:
         app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
     # Database instance (reuse same db file)
-    db_path = os.getenv("DATABASE_PATH", "bot.db")
-    database = Database(db_path)
+    db_path = os.getenv("DATABASE_PATH", "/tmp/bot.db")
+    print(f"Database path: {db_path}")
+
+    # Check if database file exists
+    import os
+    if os.path.exists(db_path):
+        print(f"Database file exists: {db_path}")
+    else:
+        print(f"Database file does not exist: {db_path}")
+        # Create directory if needed
+        os.makedirs(os.path.dirname(db_path), exist_ok=True)
+        print(f"Created directory: {os.path.dirname(db_path)}")
+
+    try:
+        database = Database(db_path)
+        print(f"Database initialized successfully: {db_path}")
+    except Exception as e:
+        print(f"Error initializing database: {e}")
+        # Create empty database instance as fallback
+        database = None
 
     # Helper functions for database operations
     async def database_connection(db):
         """Context manager for database connections"""
+        if db is None:
+            raise Exception("Database not initialized")
         conn = await db.get_connection()
         try:
             yield conn
@@ -107,6 +127,60 @@ def create_app() -> FastAPI:
     @app.get("/health", response_class=PlainTextResponse)
     async def health():
         return "ok"
+
+    @app.get("/debug", response_class=HTMLResponse)
+    async def debug():
+        """Debug endpoint to check database connection"""
+        debug_info = []
+        debug_info.append(f"Python version: {__import__('sys').version}")
+        debug_info.append(f"Current working directory: {__import__('os').getcwd()}")
+
+        # Check database
+        db_path = os.getenv("DATABASE_PATH", "/tmp/bot.db")
+        debug_info.append(f"Database path: {db_path}")
+        debug_info.append(f"Database file exists: {__import__('os').path.exists(db_path)}")
+
+        # Try to initialize database
+        if database is not None:
+            debug_info.append("Database object: Initialized")
+            try:
+                async with database_connection(database) as conn:
+                    # Test simple query
+                    result = await count_query(conn, "SELECT 1")
+                    debug_info.append(f"Test query result: {result}")
+            except Exception as e:
+                debug_info.append(f"Database connection test failed: {e}")
+        else:
+            debug_info.append("Database object: None (not initialized)")
+
+        # Environment variables
+        debug_info.append("Environment variables:")
+        for key in ["DATABASE_PATH", "ADMIN_WEB_USER", "ADMIN_WEB_PASS"]:
+            debug_info.append(f"  {key}: {os.getenv(key, 'Not set')}")
+
+        html = f"""
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <title>Debug Info</title>
+            <style>
+                body {{ font-family: 'Inter', monospace; margin: 20px; }}
+                .debug {{ background: #f5f5f5; padding: 20px; border-radius: 8px; }}
+                .line {{ margin: 5px 0; font-size: 14px; }}
+                .error {{ color: red; }}
+                .success {{ color: green; }}
+            </style>
+        </head>
+        <body>
+            <h1>🔧 Debug Information</h1>
+            <div class="debug">
+                {"<br>".join([f'<div class="line">{line}</div>' for line in debug_info])}
+            </div>
+            <p><a href="/">← Back to Dashboard</a></p>
+        </body>
+        </html>
+        """
+        return HTMLResponse(html)
 
     @app.get("/test", response_class=HTMLResponse)
     async def test_page(request: Request):
@@ -201,7 +275,7 @@ def create_app() -> FastAPI:
             <p>This is a simple test page without database or authentication.</p>
             <p>Time: """ + str(datetime.now()) + """</p>
             <hr>
-            <p><a href="/test">Test Page</a> | <a href="/health">Health Check</a></p>
+            <p><a href="/debug">🔧 Debug Info</a> | <a href="/test">Test Page</a> | <a href="/health">Health Check</a></p>
         </body>
         </html>
         """)

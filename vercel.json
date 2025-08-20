@@ -14,6 +14,8 @@
   ],
   "env": {
     "PYTHONPATH": ".",
-    "DATABASE_PATH": "/tmp/bot.db"
+    "DATABASE_PATH": "/tmp/bot.db",
+    "ADMIN_WEB_USER": "admin",
+    "ADMIN_WEB_PASS": "change-me"
   }
 }
