@@ -85,6 +85,7 @@ echo 1. SSH: ssh -i "%KEY%" %USER%@%IP%
 echo 2. cd %REMOTE_DIR%
 echo 3. Restart bot: sudo systemctl restart telegram-bot
 echo 4. Check status: sudo systemctl status telegram-bot
+goto :end
 
 :git_err
 echo GitHub operations failed. See errors above.
@@ -93,6 +94,7 @@ goto :end
 
 :err
 echo Deployment failed. See errors above.
+goto :end
 
 :end
 endlocal

@@ -438,8 +438,11 @@ def create_app() -> FastAPI:
 
     @app.get("/favicon.ico", include_in_schema=False)
     async def favicon():
-        # Avoid 404 noise in browser console
-        return Response(status_code=204)
+        # Return a simple favicon to avoid 404
+        favicon_svg = """<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+            <text y="24" font-size="24">🤖</text>
+        </svg>"""
+        return Response(content=favicon_svg, media_type="image/svg+xml")
 
     @app.get("/", response_class=HTMLResponse)
     async def dashboard(request: Request, _=Depends(basic_auth_dependency)):
@@ -465,6 +468,7 @@ def create_app() -> FastAPI:
                 "expenses_count": expenses_count,
                 "total_amount": total_amount,
                 "recent_activity": recent_activity,
+                "data_source": data_source,
                 "now": datetime.now(),
             },
         )
