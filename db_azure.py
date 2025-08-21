@@ -6,6 +6,7 @@ import asyncio
 import logging
 import pyodbc
 import aioodbc
+import aiosqlite
 from typing import Optional, List, Tuple, Any
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -46,7 +47,8 @@ class AzureDatabase:
                 self.sqlite_db = Database(azure_config.sqlite_path)
                 return await self.sqlite_db.get_connection()
         else:
-            return await self.sqlite_db.get_connection()
+            # Use direct aiosqlite connection to avoid relying on missing get_connection()
+            return await aiosqlite.connect(azure_config.sqlite_path)
     
     async def execute_query(self, query: str, params: tuple = None) -> Any:
         """Execute a query and return results."""
@@ -117,7 +119,8 @@ class AzureDatabase:
             currency NVARCHAR(10) NOT NULL,
             note NVARCHAR(500),
             created_at DATETIME2 DEFAULT GETDATE(),
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            -- Avoid multiple cascade paths: cascade via wallet, no action via user
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE NO ACTION,
             FOREIGN KEY (wallet_id) REFERENCES user_wallets(id) ON DELETE CASCADE
         );
         
@@ -159,7 +162,8 @@ class AzureDatabase:
             created_at DATETIME2 DEFAULT GETDATE(),
             FOREIGN KEY (expense_id) REFERENCES expenses(id) ON DELETE CASCADE,
             FOREIGN KEY (group_expense_id) REFERENCES group_expenses(id) ON DELETE CASCADE,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            -- Avoid multiple cascade paths from users
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE NO ACTION
         );
         
         -- Trips table
@@ -181,7 +185,8 @@ class AzureDatabase:
             user_id INT NOT NULL,
             joined_at DATETIME2 DEFAULT GETDATE(),
             FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            -- Avoid multiple cascade paths from users via trips
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE NO ACTION,
             UNIQUE(trip_id, user_id)
         );
         
@@ -250,7 +255,8 @@ class AzureDatabase:
             currency NVARCHAR(10) NOT NULL,
             created_at DATETIME2 DEFAULT GETDATE(),
             FOREIGN KEY (group_expense_id) REFERENCES group_expenses(id) ON DELETE CASCADE,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+            -- Avoid multiple cascade paths from users
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE NO ACTION,
             FOREIGN KEY (wallet_id) REFERENCES user_wallets(id) ON DELETE SET NULL
         );
         
@@ -264,7 +270,8 @@ class AzureDatabase:
             currency NVARCHAR(10) NOT NULL,
             created_at DATETIME2 DEFAULT GETDATE(),
             FOREIGN KEY (group_expense_id) REFERENCES group_expenses(id) ON DELETE CASCADE,
-            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            -- Avoid multiple cascade paths from users
+            FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE NO ACTION
         );
         
         -- Payment preferences table
