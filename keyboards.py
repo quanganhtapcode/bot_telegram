@@ -11,10 +11,10 @@ class Keyboards:
     def main_dm_menu() -> InlineKeyboardMarkup:
         """Main menu for DM conversations."""
         keyboard = [
-            [InlineKeyboardButton("💰 Budget của tôi", callback_data="budget_menu")],
-            [InlineKeyboardButton("🧾 Chi tiêu cá nhân", callback_data="personal_expense_menu")],
+            [InlineKeyboardButton("💰 Quản lý ví", callback_data="budget_menu")],
+            [InlineKeyboardButton("💸 Chi tiêu cá nhân", callback_data="personal_expense_menu")],
             [InlineKeyboardButton("⚙️ Cài đặt", callback_data="settings_menu"), 
-             InlineKeyboardButton("❓ Hướng dẫn", callback_data="help_menu")]
+             InlineKeyboardButton("❓ Trợ giúp", callback_data="help_menu")]
         ]
         return InlineKeyboardMarkup(keyboard)
 
@@ -24,13 +24,13 @@ class Keyboards:
         keyboard = [
             [
                 InlineKeyboardButton("➕ Tạo ví mới", callback_data="create_wallet"),
-                InlineKeyboardButton("💳 Nạp tiền", callback_data="topup_wallet")
+                InlineKeyboardButton("💰 Nạp tiền", callback_data="topup_wallet")
             ],
             [
-                InlineKeyboardButton("➖ Giảm tiền", callback_data="decrease_wallet"),
-                InlineKeyboardButton("🗑️ Xoá ví", callback_data="delete_wallet")
+                InlineKeyboardButton("💸 Rút tiền", callback_data="decrease_wallet"),
+                InlineKeyboardButton("🗑️ Xóa ví", callback_data="delete_wallet")
             ],
-            [InlineKeyboardButton("� Chi tiết ví", callback_data="wallet_details")],
+            [InlineKeyboardButton("📊 Chi tiết ví", callback_data="wallet_details")],
             [InlineKeyboardButton("🔙 Quay lại", callback_data="main_menu")]
         ]
         return InlineKeyboardMarkup(keyboard)
@@ -40,8 +40,8 @@ class Keyboards:
         """Personal expense menu."""
         keyboard = [
             [InlineKeyboardButton("➕ Thêm chi tiêu", callback_data="add_personal_expense")],
-            [InlineKeyboardButton("📚 Lịch sử (7 ngày)", callback_data="expense_history_7")],
-            [InlineKeyboardButton("↩️ Hoàn tác", callback_data="undo_expense")],
+            [InlineKeyboardButton("📊 Lịch sử (7 ngày)", callback_data="expense_history_7")],
+            [InlineKeyboardButton("🔄 Hoàn tác giao dịch", callback_data="undo_expense")],
             [InlineKeyboardButton("🔙 Quay lại", callback_data="main_menu")]
         ]
         return InlineKeyboardMarkup(keyboard)
@@ -50,8 +50,10 @@ class Keyboards:
     def settings_menu() -> InlineKeyboardMarkup:
         """Settings menu."""
         keyboard = [
-            [InlineKeyboardButton("💳 Quản lý STK", callback_data="bank_account_menu")],
-            [InlineKeyboardButton(" Quay lại", callback_data="main_menu")]
+            [InlineKeyboardButton("🏦 Quản lý tài khoản", callback_data="bank_account_menu")],
+            [InlineKeyboardButton("💱 Cài đặt tiền tệ", callback_data="currency_settings")],
+            [InlineKeyboardButton("🔔 Thông báo", callback_data="notification_settings")],
+            [InlineKeyboardButton("🔙 Quay lại", callback_data="main_menu")]
         ]
         return InlineKeyboardMarkup(keyboard)
 
@@ -108,8 +110,9 @@ class Keyboards:
     def group_main_menu() -> InlineKeyboardMarkup:
         """Main menu for group conversations."""
         keyboard = [
-            [InlineKeyboardButton("➕ Thêm chi tiêu nhóm", callback_data="add_group_expense")],
-            [InlineKeyboardButton("📊 Tổng quan", callback_data="group_overview")]
+            [InlineKeyboardButton("💸 Thêm chi tiêu nhóm", callback_data="add_group_expense")],
+            [InlineKeyboardButton("📊 Tổng quan chi tiêu", callback_data="group_overview")],
+            [InlineKeyboardButton("🔄 Hoàn tác giao dịch", callback_data="undo_group_expense_menu")]
         ]
         return InlineKeyboardMarkup(keyboard)
 
@@ -314,9 +317,10 @@ class Keyboards:
         """Help menu with different help topics."""
         keyboard = [
             [InlineKeyboardButton("💰 Hướng dẫn quản lý ví", callback_data="help_wallet")],
-            [InlineKeyboardButton("🧾 Hướng dẫn chi tiêu", callback_data="help_expense")],
-            [InlineKeyboardButton("⚙️ Hướng dẫn cài đặt", callback_data="help_settings")],
-            [InlineKeyboardButton("⌨️ Danh sách lệnh", callback_data="help_commands")],
+            [InlineKeyboardButton("💸 Hướng dẫn chi tiêu", callback_data="help_expense")],
+            [InlineKeyboardButton("👥 Hướng dẫn nhóm", callback_data="help_group")],
+            [InlineKeyboardButton("⚙️ Cài đặt & Tài khoản", callback_data="help_settings")],
+            [InlineKeyboardButton("📋 Danh sách lệnh", callback_data="help_commands")],
             [InlineKeyboardButton("🔙 Quay lại", callback_data="main_menu")]
         ]
         return InlineKeyboardMarkup(keyboard)

@@ -348,12 +348,15 @@ class BotHandlers:
         if chat.type == 'private':
             try:
                 await update.message.reply_text(
-                    f"Xin chào {user.first_name}! 👋\n\n"
-                    "Tôi là bot quản lý chi tiêu chuyến đi. Bạn có thể:\n"
-                    "• Quản lý ví cá nhân trong DM này\n"
-                    "• Tạo và tham gia chuyến đi trong nhóm\n"
-                    "• Chia sẻ chi tiêu nhóm một cách dễ dàng\n\n"
-                    "Chọn một tùy chọn bên dưới để bắt đầu:",
+                    f"👋 **Chào mừng {user.first_name}!**\n\n"
+                    "🤖 **Bot Quản Lý Chi Tiêu Thông Minh**\n\n"
+                    "✨ **Tính năng chính:**\n"
+                    "💰 Quản lý ví đa tiền tệ\n"
+                    "📊 Theo dõi chi tiêu cá nhân\n"
+                    "👥 Chia sẻ chi phí nhóm tự động\n"
+                    "🏦 Tích hợp VietQR & chuyển khoản\n\n"
+                    "🚀 **Bắt đầu ngay:**",
+                    parse_mode='Markdown',
                     reply_markup=Keyboards.main_dm_menu()
                 )
                 logger.info("Successfully sent start message with keyboard")
@@ -772,8 +775,10 @@ class BotHandlers:
     async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /help command."""
         await update.message.reply_text(
-            "❓ Hướng dẫn sử dụng Bot\n\n"
-            "Chọn chủ đề bạn muốn tìm hiểu:",
+            "📚 **Trung Tâm Trợ Giúp**\n\n"
+            "🎯 Chọn chủ đề bạn muốn tìm hiểu:\n"
+            "👇 Nhấn vào các nút bên dưới",
+            parse_mode='Markdown',
             reply_markup=Keyboards.help_menu()
         )
 
@@ -3078,8 +3083,10 @@ class BotHandlers:
 
             elif data == "help_menu":
                 await query.edit_message_text(
-                    "❓ Hướng dẫn sử dụng Bot\n\n"
-                    "Chọn chủ đề bạn muốn tìm hiểu:",
+                    "📚 **Trung Tâm Trợ Giúp**\n\n"
+                    "🎯 Chọn chủ đề bạn muốn tìm hiểu:\n"
+                    "👇 Nhấn vào các nút bên dưới",
+                    parse_mode='Markdown',
                     reply_markup=Keyboards.help_menu()
                 )
 
