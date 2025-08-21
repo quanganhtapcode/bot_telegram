@@ -1895,33 +1895,65 @@ class BotHandlers:
 
             # VietQR and Banking Handlers
             elif data == "bank_account_menu":
-                db_user = await db.get_user_by_tg_id(user_id)
-                bank_accounts = await db.get_user_bank_accounts(db_user.id)
-                has_account = len(bank_accounts) > 0
-                
-                text = "💳 **Quản lý tài khoản ngân hàng**\n\n"
-                if has_account:
-                    # Show the single bank account info
-                    account = bank_accounts[0]  # Only one account allowed
-                    account_id, bank_code, bank_name, account_number, account_name = account[:5]
-                    text += f"🏛️ **{bank_name}**\n"
-                    text += f"💳 **STK:** `{account_number}`\n"
-                    text += f"👤 **Tên:** {account_name}\n\n"
-                    text += "📱 Sử dụng **Xem QR** để tạo mã QR nhận tiền"
-                else:
-                    text += "❌ **Chưa có tài khoản nào**\n\n"
-                    text += "Thêm tài khoản ngân hàng để:\n"
-                    text += "• Nhận chuyển khoản VND\n"
+                try:
+                    # Get user from database
+                    db_user = await db.get_user_by_tg_id(user_id)
+                    if not db_user:
+                        await query.edit_message_text(
+                            "❌ **Lỗi:** Không tìm thấy thông tin user!\n\n"
+                            "Vui lòng khởi động lại bot bằng lệnh /start",
+                            parse_mode='Markdown',
+                            reply_markup=Keyboards.main_dm_menu()
+                        )
+                        return
+
+                    # Get bank accounts
+                    bank_accounts = await db.get_user_bank_accounts(db_user.id)
+                    has_account = len(bank_accounts) > 0
+
+                    text = "💳 **Quản lý tài khoản ngân hàng**\n\n"
+                    if has_account:
+                        # Show the single bank account info
+                        account = bank_accounts[0]  # Only one account allowed
+                        account_id, bank_code, bank_name, account_number, account_name = account[:5]
+                        text += f"🏛️ **{bank_name}**\n"
+                        text += f"💳 **STK:** `{account_number}`\n"
+                        text += f"👤 **Tên:** {account_name}\n\n"
+                        text += "📱 Sử dụng **Xem QR** để tạo mã QR nhận tiền"
+                    else:
+                        text += "❌ **Chưa có tài khoản nào**\n\n"
+                        text += "Thêm tài khoản ngân hàng để:\n"
+                        text += "• Nhận chuyển khoản VND\n"
                     text += "• Tạo mã QR thanh toán\n"
                     text += "• Quản lý giao dịch tự động"
-                
-                # Handle both text and photo messages
-                try:
+
+                    # Create appropriate keyboard
+                    keyboard = []
+                    if has_account:
+                        keyboard.append([InlineKeyboardButton("📱 Xem QR", callback_data="view_qr")])
+                        keyboard.append([InlineKeyboardButton("🗑️ Xoá STK", callback_data="delete_bank_account")])
+                    else:
+                        keyboard.append([InlineKeyboardButton("➕ Thêm STK", callback_data="add_bank_account")])
+
+                    keyboard.append([InlineKeyboardButton("🔙 Quay lại", callback_data="settings_menu")])
+
                     await query.edit_message_text(
                         text,
                         parse_mode='Markdown',
-                        reply_markup=Keyboards.bank_account_menu(has_account)
+                        reply_markup=InlineKeyboardMarkup(keyboard)
                     )
+
+                except Exception as e:
+                    logger.error(f"Error in bank_account_menu: {e}")
+                    await query.edit_message_text(
+                        "❌ **Có lỗi xảy ra**\n\n"
+                        "Không thể tải thông tin tài khoản ngân hàng.\n"
+                        "Vui lòng thử lại sau.",
+                        parse_mode='Markdown',
+                        reply_markup=Keyboards.main_dm_menu()
+                    )
+
+            # Handle both text and photo messages
                 except Exception:
                     # If edit fails (e.g., message is a photo), send new message
                     await query.answer()
