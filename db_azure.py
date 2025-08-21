@@ -198,9 +198,8 @@ class AzureDatabase:
         CREATE TABLE wallet_adjustments (
             id INT IDENTITY(1,1) PRIMARY KEY,
             wallet_id INT NOT NULL,
-            amount DECIMAL(15,2) NOT NULL,
-            adjustment_type NVARCHAR(50) NOT NULL,
-            note NVARCHAR(500),
+            delta_amount DECIMAL(15,2) NOT NULL,
+            reason NVARCHAR(500) NOT NULL,
             created_at DATETIME2 DEFAULT GETDATE(),
             FOREIGN KEY (wallet_id) REFERENCES user_wallets(id) ON DELETE CASCADE
         );
@@ -211,10 +210,10 @@ class AzureDatabase:
             id INT IDENTITY(1,1) PRIMARY KEY,
             from_currency NVARCHAR(10) NOT NULL,
             to_currency NVARCHAR(10) NOT NULL,
-            rate DECIMAL(15,6) NOT NULL,
-            set_by_user_id INT,
+            rate DECIMAL(20,8) NOT NULL,
+            set_by INT NOT NULL,
             created_at DATETIME2 DEFAULT GETDATE(),
-            FOREIGN KEY (set_by_user_id) REFERENCES users(id),
+            FOREIGN KEY (set_by) REFERENCES users(id),
             UNIQUE(from_currency, to_currency)
         );
         

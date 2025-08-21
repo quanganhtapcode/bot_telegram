@@ -166,64 +166,130 @@ class SQLiteToAzureMigrator:
                                 has_identity=True)
     
     async def _migrate_trips(self):
-        """Migrate trips table."""
+        """Migrate trips table with IDENTITY_INSERT."""
+        # Map SQLite columns: code, name, base_currency, owner_user_id -> creator_id
         await self._migrate_table('trips', 
-                                ['id', 'name', 'group_id', 'creator_id', 'created_at'])
+                                ['id', 'code', 'name', 'base_currency', 'owner_user_id', 'created_at'],
+                                has_identity=True)
     
     async def _migrate_trip_members(self):
-        """Migrate trip_members table."""
+        """Migrate trip_members table with IDENTITY_INSERT."""
+        # Map SQLite columns: trip_id, user_id, role (no id column, composite PK)
         await self._migrate_table('trip_members', 
-                                ['id', 'trip_id', 'user_id', 'joined_at'])
+                                ['trip_id', 'user_id', 'role'],
+                                has_identity=False)  # No IDENTITY column
     
     async def _migrate_expenses(self):
-        """Migrate expenses table."""
+        """Migrate expenses table with IDENTITY_INSERT."""
+        # Map SQLite columns: payer_user_id, rate_to_base, amount_base, note
         await self._migrate_table('expenses', 
-                                ['id', 'trip_id', 'payer_id', 'amount', 'currency', 'note', 'created_at'])
+                                ['id', 'trip_id', 'payer_user_id', 'amount', 'currency', 'rate_to_base', 'amount_base', 'note', 'created_at'],
+                                has_identity=True)
     
     async def _migrate_group_expenses(self):
-        """Migrate group_expenses table."""
+        """Migrate group_expenses table with IDENTITY_INSERT."""
+        # Map SQLite columns to Azure SQL columns
         await self._migrate_table('group_expenses', 
-                                ['id', 'group_id', 'payer_id', 'amount', 'currency', 'note', 'created_at'])
+                                ['id', 'group_id', 'payer_user_id', 'amount', 'currency', 'description', 'created_at', 'settled', 'undo_until'],
+                                has_identity=True)
     
     async def _migrate_expense_shares(self):
-        """Migrate expense_shares table."""
+        """Migrate expense_shares table with IDENTITY_INSERT."""
+        # Map SQLite columns: share_ratio -> share_amount (need conversion)
         await self._migrate_table('expense_shares', 
-                                ['id', 'expense_id', 'group_expense_id', 'user_id', 'share_amount', 'currency', 'created_at'])
+                                ['id', 'expense_id', 'user_id', 'share_ratio'],
+                                has_identity=True)
     
     async def _migrate_wallet_adjustments(self):
-        """Migrate wallet_adjustments table."""
-        await self._migrate_table('wallet_adjustments', 
-                                ['id', 'wallet_id', 'amount', 'adjustment_type', 'note', 'created_at'])
+        """Migrate wallet_adjustments table with FK validation and IDENTITY_INSERT.
+        Only migrate rows whose wallet_id exists in user_wallets to satisfy FK.
+        """
+        logger.info("Migrating table: wallet_adjustments (with FK validation)")
+
+        # Load data from SQLite
+        sqlite_conn = self.get_sqlite_connection()
+        s_cur = sqlite_conn.cursor()
+        s_cur.execute("SELECT id, wallet_id, delta_amount, reason, created_at FROM wallet_adjustments")
+        rows = s_cur.fetchall()
+
+        if not rows:
+            logger.info("No data to migrate for table: wallet_adjustments")
+            sqlite_conn.close()
+            return
+
+        # Open Azure connection and get valid wallet ids
+        azure_conn = self.get_azure_connection()
+        a_cur = azure_conn.cursor()
+        a_cur.execute("SELECT id FROM user_wallets")
+        valid_wallet_ids = set(r[0] for r in a_cur.fetchall())
+
+        # Filter rows with valid wallet_id
+        filtered = [r for r in rows if r[1] in valid_wallet_ids]
+        skipped = len(rows) - len(filtered)
+        if skipped:
+            logger.warning(f"Skipping {skipped} wallet_adjustments rows with missing wallet_id in user_wallets")
+
+        if not filtered:
+            logger.info("No valid rows to migrate for wallet_adjustments")
+            azure_conn.close()
+            sqlite_conn.close()
+            return
+
+        # Insert with IDENTITY_INSERT
+        a_cur.execute("SET IDENTITY_INSERT wallet_adjustments ON")
+        a_cur.executemany(
+            "INSERT INTO wallet_adjustments (id, wallet_id, delta_amount, reason, created_at) VALUES (?, ?, ?, ?, ?)",
+            filtered
+        )
+        azure_conn.commit()
+        a_cur.execute("SET IDENTITY_INSERT wallet_adjustments OFF")
+        azure_conn.commit()
+
+        logger.info(f"Successfully migrated wallet_adjustments: {len(filtered)} rows (skipped {skipped})")
+
+        azure_conn.close()
+        sqlite_conn.close()
     
     async def _migrate_exchange_rates(self):
-        """Migrate exchange_rates table."""
+        """Migrate exchange_rates table with IDENTITY_INSERT."""
+        # Map SQLite columns: set_by -> set_by_user_id
         await self._migrate_table('exchange_rates', 
-                                ['id', 'from_currency', 'to_currency', 'rate', 'set_by_user_id', 'created_at'])
+                                ['id', 'from_currency', 'to_currency', 'rate', 'set_by', 'created_at'],
+                                has_identity=True)
     
     async def _migrate_bank_accounts(self):
-        """Migrate bank_accounts table."""
+        """Migrate bank_accounts table with IDENTITY_INSERT."""
         await self._migrate_table('bank_accounts', 
-                                ['id', 'user_id', 'bank_code', 'bank_name', 'account_number', 'account_name', 'is_default', 'created_at'])
+                                ['id', 'user_id', 'bank_code', 'bank_name', 'account_number', 'account_name', 'is_default', 'created_at'],
+                                has_identity=True)
     
     async def _migrate_group_debts(self):
-        """Migrate group_debts table."""
+        """Migrate group_debts table with IDENTITY_INSERT."""
+        # Map SQLite columns: debtor_user_id, creditor_user_id, last_updated
         await self._migrate_table('group_debts', 
-                                ['id', 'group_id', 'debtor_id', 'creditor_id', 'amount', 'currency', 'created_at', 'updated_at'])
+                                ['id', 'group_id', 'debtor_user_id', 'creditor_user_id', 'amount', 'currency', 'last_updated'],
+                                has_identity=True)
     
     async def _migrate_group_deductions(self):
-        """Migrate group_deductions table."""
+        """Migrate group_deductions table with IDENTITY_INSERT."""
+        # Map SQLite columns: trip_id, expense_id, share_amount, share_currency, fx_rate_used, deducted_amount_in_wallet_currency
         await self._migrate_table('group_deductions', 
-                                ['id', 'group_expense_id', 'user_id', 'wallet_id', 'deducted_amount', 'currency', 'created_at'])
+                                ['id', 'user_id', 'trip_id', 'expense_id', 'share_amount', 'share_currency', 'wallet_id', 'fx_rate_used', 'deducted_amount_in_wallet_currency', 'created_at'],
+                                has_identity=True)
     
     async def _migrate_pending_deductions(self):
-        """Migrate pending_deductions table."""
+        """Migrate pending_deductions table with IDENTITY_INSERT."""
+        # Map SQLite columns: trip_id, expense_id, share_amount, share_currency, suggested_wallet_id, suggested_fx_rate, suggested_deduction_amount
         await self._migrate_table('pending_deductions', 
-                                ['id', 'group_expense_id', 'user_id', 'pending_amount', 'currency', 'created_at'])
+                                ['id', 'user_id', 'trip_id', 'expense_id', 'share_amount', 'share_currency', 'suggested_wallet_id', 'suggested_fx_rate', 'suggested_deduction_amount', 'created_at'],
+                                has_identity=True)
     
     async def _migrate_payment_preferences(self):
-        """Migrate payment_preferences table."""
+        """Migrate payment_preferences table with IDENTITY_INSERT."""
+        # Map SQLite columns: accept_vnd_payments, auto_convert_debts, preferred_bank_id
         await self._migrate_table('payment_preferences', 
-                                ['id', 'user_id', 'accept_vnd_transfers', 'auto_convert_debts', 'created_at', 'updated_at'])
+                                ['user_id', 'accept_vnd_payments', 'auto_convert_debts', 'preferred_bank_id'],
+                                has_identity=False)  # This table uses user_id as PK, not IDENTITY
     
     async def verify_migration(self):
         """Verify that migration was successful by comparing row counts."""
