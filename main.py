@@ -14,6 +14,7 @@ from telegram import Update, BotCommand, InlineKeyboardButton, InlineKeyboardMar
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from telegram.error import TelegramError, TimedOut, NetworkError
 from telegram.request import HTTPXRequest
+from aiohttp import web
 import pytz
 import asyncio
 from datetime import datetime, time
@@ -4224,6 +4225,90 @@ def main():
             logger.error(f"Error setting commands: {e}")
         
         logger.info("Bot initialized successfully")
+
+        # Expose read-only Bot API for Vercel admin
+        def _json(o):
+            if isinstance(o, (datetime,)):
+                return o.isoformat()
+            if isinstance(o, Decimal):
+                return float(o)
+            return str(o)
+
+        async def api_health(request):
+            return web.json_response({"ok": True}, headers={"Access-Control-Allow-Origin": "*"})
+
+        async def api_users(request):
+            try:
+                rows = await db.execute_query(
+                    "SELECT id, tg_user_id, name, created_at, last_seen FROM users ORDER BY created_at DESC LIMIT 500"
+                )
+                data = [
+                    {
+                        "id": r[0],
+                        "tg_user_id": r[1],
+                        "name": r[2],
+                        "created_at": r[3],
+                        "last_seen": r[4],
+                    }
+                    for r in (rows or [])
+                ]
+                return web.json_response({"users": data}, dumps=lambda x: json.dumps(x, default=_json), headers={"Access-Control-Allow-Origin": "*"})
+            except Exception as e:
+                logger.error(f"/api/users error: {e}")
+                return web.json_response({"users": []}, status=500)
+
+        async def api_expenses(request):
+            try:
+                rows = await db.execute_query(
+                    """
+                    SELECT e.id, e.trip_id, e.payer_user_id, e.amount, e.currency, e.note, e.created_at
+                    FROM expenses e ORDER BY e.created_at DESC LIMIT 500
+                    """
+                )
+                data = [
+                    {
+                        "id": r[0],
+                        "trip_id": r[1],
+                        "payer_user_id": r[2],
+                        "amount": float(r[3]) if r[3] is not None else 0,
+                        "currency": r[4],
+                        "note": r[5],
+                        "created_at": r[6],
+                    }
+                    for r in (rows or [])
+                ]
+                return web.json_response({"expenses": data}, dumps=lambda x: json.dumps(x, default=_json), headers={"Access-Control-Allow-Origin": "*"})
+            except Exception as e:
+                logger.error(f"/api/expenses error: {e}")
+                return web.json_response({"expenses": []}, status=500)
+
+        async def api_trips(request):
+            try:
+                rows = await db.execute_query(
+                    "SELECT id, code, name, base_currency, owner_user_id, created_at FROM trips ORDER BY created_at DESC LIMIT 200"
+                )
+                data = [
+                    {
+                        "id": r[0],
+                        "code": r[1],
+                        "name": r[2],
+                        "base_currency": r[3],
+                        "owner_user_id": r[4],
+                        "created_at": r[5],
+                    }
+                    for r in (rows or [])
+                ]
+                return web.json_response({"trips": data}, dumps=lambda x: json.dumps(x, default=_json), headers={"Access-Control-Allow-Origin": "*"})
+            except Exception as e:
+                logger.error(f"/api/trips error: {e}")
+                return web.json_response({"trips": []}, status=500)
+
+        application.web_app.add_routes([
+            web.get("/api/health", api_health),
+            web.get("/api/users", api_users),
+            web.get("/api/expenses", api_expenses),
+            web.get("/api/trips", api_trips),
+        ])
         
         # Start daily task scheduler
         asyncio.create_task(schedule_daily_tasks(application))

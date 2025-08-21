@@ -16,6 +16,7 @@
     "PYTHONPATH": ".",
     "DATABASE_PATH": "/tmp/bot.db",
     "ADMIN_WEB_USER": "admin",
-    "ADMIN_WEB_PASS": "change-me"
+    "ADMIN_WEB_PASS": "change-me",
+    "BOT_API_BASE": "https://bot.quanganh.org"
   }
 }
