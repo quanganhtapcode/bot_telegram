@@ -1,0 +1,37 @@
+# Azure SQL Database Configuration
+# Copy these settings to your .env file after creating Azure SQL Database
+
+# Azure SQL Database Connection
+AZURE_SQL_SERVER=your-server.database.windows.net
+AZURE_SQL_DATABASE=telegram_bot
+AZURE_SQL_USERNAME=your_username
+AZURE_SQL_PASSWORD=your_password
+AZURE_SQL_DRIVER=ODBC Driver 18 for SQL Server
+AZURE_SQL_ENCRYPT=yes
+AZURE_SQL_TRUST_CERT=no
+AZURE_SQL_TIMEOUT=30
+
+# Database Mode
+USE_SQLITE_FALLBACK=false  # Set to false to use Azure SQL, true for SQLite
+
+# Keep existing settings for fallback
+DATABASE_PATH=./bot.db
+
+# Existing bot settings (keep these)
+BOT_TOKEN=your_bot_token
+ADMIN_USER_ID=your_admin_user_id
+DEFAULT_BASE_CURRENCY=TWD
+TIMEZONE=Asia/Ho_Chi_Minh
+LOG_LEVEL=INFO
+
+# Webhook settings (if using)
+USE_WEBHOOK=false
+WEBHOOK_DOMAIN=
+WEBHOOK_PATH=/telegram/webhook
+WEBHOOK_PORT=8080
+WEBHOOK_SECRET=
+
+# Admin web panel settings
+ADMIN_WEB_USER=admin
+ADMIN_WEB_PASS=change-me-to-secure-password
+BOT_API_BASE=
