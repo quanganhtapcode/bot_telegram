@@ -134,7 +134,8 @@ class AzureDatabase:
             currency NVARCHAR(10) NOT NULL,
             note NVARCHAR(500),
             created_at DATETIME2 DEFAULT GETDATE(),
-            FOREIGN KEY (payer_id) REFERENCES users(id) ON DELETE CASCADE
+            -- Avoid cascade from users to prevent multiple cascade paths
+            FOREIGN KEY (payer_id) REFERENCES users(id) ON DELETE NO ACTION
         );
         
         -- Group expenses table
@@ -147,7 +148,8 @@ class AzureDatabase:
             currency NVARCHAR(10) NOT NULL,
             note NVARCHAR(500),
             created_at DATETIME2 DEFAULT GETDATE(),
-            FOREIGN KEY (payer_id) REFERENCES users(id) ON DELETE CASCADE
+            -- Avoid cascade from users to prevent multiple cascade paths
+            FOREIGN KEY (payer_id) REFERENCES users(id) ON DELETE NO ACTION
         );
         
         -- Expense shares table
@@ -160,8 +162,9 @@ class AzureDatabase:
             share_amount DECIMAL(15,2) NOT NULL,
             currency NVARCHAR(10) NOT NULL,
             created_at DATETIME2 DEFAULT GETDATE(),
-            FOREIGN KEY (expense_id) REFERENCES expenses(id) ON DELETE CASCADE,
-            FOREIGN KEY (group_expense_id) REFERENCES group_expenses(id) ON DELETE CASCADE,
+            -- Avoid multiple cascade paths: no action to parent expenses
+            FOREIGN KEY (expense_id) REFERENCES expenses(id) ON DELETE NO ACTION,
+            FOREIGN KEY (group_expense_id) REFERENCES group_expenses(id) ON DELETE NO ACTION,
             -- Avoid multiple cascade paths from users
             FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE NO ACTION
         );

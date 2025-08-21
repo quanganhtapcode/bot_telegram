@@ -84,7 +84,7 @@ class SQLiteToAzureMigrator:
         logger.info("Azure tables created successfully")
     
     async def _migrate_table(self, table_name: str, columns: List[str], 
-                           transform_row=None, batch_size: int = 1000):
+                           transform_row=None, batch_size: int = 1000, has_identity: bool = True):
         """Generic method to migrate a table."""
         logger.info(f"Migrating table: {table_name}")
         
@@ -104,8 +104,9 @@ class SQLiteToAzureMigrator:
             azure_conn = self.get_azure_connection()
             azure_cursor = azure_conn.cursor()
             
-            # Build insert query (excluding id for IDENTITY columns)
-            insert_columns = [col for col in columns if col != 'id']
+            # Build insert query
+            # For tables with IDENTITY, we preserve original IDs to keep FK references valid
+            insert_columns = columns[:] if has_identity else [col for col in columns if col != 'id']
             placeholders = ', '.join(['?' for _ in insert_columns])
             insert_query = f"INSERT INTO {table_name} ({', '.join(insert_columns)}) VALUES ({placeholders})"
             
@@ -119,14 +120,22 @@ class SQLiteToAzureMigrator:
                     # Transform row if needed
                     if transform_row:
                         row = transform_row(row)
-                    
-                    # Exclude id column (first column) for IDENTITY tables
-                    row_data = row[1:] if columns[0] == 'id' else row
+                    # Include or exclude id depending on has_identity flag
+                    row_data = row if has_identity else (row[1:] if columns[0] == 'id' else row)
                     batch_data.append(row_data)
+                
+                # Enable IDENTITY_INSERT if needed
+                if has_identity:
+                    azure_cursor.execute(f"SET IDENTITY_INSERT {table_name} ON")
                 
                 # Insert batch
                 azure_cursor.executemany(insert_query, batch_data)
                 azure_conn.commit()
+
+                # Disable IDENTITY_INSERT if enabled
+                if has_identity:
+                    azure_cursor.execute(f"SET IDENTITY_INSERT {table_name} OFF")
+                    azure_conn.commit()
                 
                 migrated_count += len(batch)
                 logger.info(f"Migrated {migrated_count}/{len(rows)} rows for {table_name}")
@@ -141,18 +150,20 @@ class SQLiteToAzureMigrator:
             sqlite_conn.close()
     
     async def _migrate_users(self):
-        """Migrate users table."""
-        await self._migrate_table('users', ['id', 'tg_user_id', 'name', 'created_at', 'last_seen'])
+        """Migrate users table with IDENTITY_INSERT to preserve IDs."""
+        await self._migrate_table('users', ['id', 'tg_user_id', 'name', 'created_at', 'last_seen'], has_identity=True)
     
     async def _migrate_user_wallets(self):
-        """Migrate user_wallets table."""
+        """Migrate user_wallets table with IDENTITY_INSERT to preserve IDs."""
         await self._migrate_table('user_wallets', 
-                                ['id', 'user_id', 'currency', 'current_balance', 'created_at'])
+                                ['id', 'user_id', 'currency', 'current_balance', 'created_at'],
+                                has_identity=True)
     
     async def _migrate_personal_expenses(self):
-        """Migrate personal_expenses table."""
+        """Migrate personal_expenses table with FK validation."""
         await self._migrate_table('personal_expenses', 
-                                ['id', 'user_id', 'wallet_id', 'amount', 'currency', 'note', 'created_at'])
+                                ['id', 'user_id', 'wallet_id', 'amount', 'currency', 'note', 'created_at'],
+                                has_identity=True)
     
     async def _migrate_trips(self):
         """Migrate trips table."""
