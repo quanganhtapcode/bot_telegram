@@ -52,7 +52,6 @@ class Keyboards:
         keyboard = [
             [InlineKeyboardButton("🏦 Quản lý tài khoản", callback_data="bank_account_menu")],
             [InlineKeyboardButton("💱 Cài đặt tiền tệ", callback_data="currency_settings")],
-            [InlineKeyboardButton("🔔 Thông báo", callback_data="notification_settings")],
             [InlineKeyboardButton("🔙 Quay lại", callback_data="main_menu")]
         ]
         return InlineKeyboardMarkup(keyboard)
