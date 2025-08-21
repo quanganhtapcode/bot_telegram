@@ -302,6 +302,56 @@ class AzureDatabase:
                     logger.error(f"Statement: {statement[:100]}...")
     
     # Delegate all other methods to SQLite implementation or implement Azure versions
+    async def get_user_by_tg_id(self, tg_user_id: int) -> Optional[User]:
+        """Get user by Telegram user ID."""
+        if self.use_azure:
+            query = (
+                "SELECT id, tg_user_id, name, created_at, last_seen "
+                "FROM users WHERE tg_user_id = ?"
+            )
+            result = await self.execute_query(query, (tg_user_id,))
+            if result:
+                return User(*result[0])
+            return None
+        else:
+            return await self.sqlite_db.get_user_by_tg_id(tg_user_id)
+
+    async def get_exchange_rate(self, from_currency: str, to_currency: str) -> Optional[Decimal]:
+        """Get exchange rate; try direct pair, then inverse if available."""
+        if self.use_azure:
+            # Direct
+            q = (
+                "SELECT rate FROM exchange_rates WHERE from_currency = ? AND to_currency = ?"
+            )
+            rows = await self.execute_query(q, (from_currency, to_currency))
+            if rows:
+                return Decimal(str(rows[0][0]))
+            # Inverse
+            rows = await self.execute_query(q, (to_currency, from_currency))
+            if rows and rows[0][0] not in (None, 0):
+                return Decimal('1') / Decimal(str(rows[0][0]))
+            return None
+        else:
+            return await self.sqlite_db.get_exchange_rate(from_currency, to_currency)
+
+    async def set_exchange_rate(self, from_currency: str, to_currency: str, rate: Decimal, user_id: int) -> None:
+        """Upsert exchange rate."""
+        if self.use_azure:
+            query = (
+                "MERGE exchange_rates AS target "
+                "USING (SELECT ? AS from_currency, ? AS to_currency) AS source "
+                "ON target.from_currency = source.from_currency AND target.to_currency = source.to_currency "
+                "WHEN MATCHED THEN UPDATE SET rate = ?, set_by = ?, created_at = GETDATE() "
+                "WHEN NOT MATCHED THEN INSERT (from_currency, to_currency, rate, set_by, created_at) "
+                "VALUES (?, ?, ?, ?, GETDATE());"
+            )
+            params = (
+                from_currency, to_currency, float(rate), user_id,
+                from_currency, to_currency, float(rate), user_id
+            )
+            await self.execute_query(query, params)
+        else:
+            await self.sqlite_db.set_exchange_rate(from_currency, to_currency, rate, user_id)
     async def create_or_update_user(self, tg_user_id: int, name: str) -> User:
         """Create or update user."""
         if self.use_azure:
@@ -329,8 +379,12 @@ class AzureDatabase:
     # Add more method implementations as needed...
     # For now, delegate to SQLite for methods not yet implemented
     def __getattr__(self, name):
-        """Delegate unknown methods to SQLite database."""
-        if hasattr(self, 'sqlite_db'):
-            return getattr(self.sqlite_db, name)
-        else:
-            raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{name}'")
+        """Delegate unknown methods to SQLite database if available, else raise clearly."""
+        sqlite_db = self.__dict__.get('sqlite_db')
+        if sqlite_db is not None:
+            return getattr(sqlite_db, name)
+        raise AttributeError(f"{self.__class__.__name__} has no attribute {name}")
+
+    async def init_db(self):
+        """No-op initializer for compatibility with existing code."""
+        return
